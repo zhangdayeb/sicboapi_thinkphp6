@@ -12,12 +12,13 @@ use app\websocket\GameTimer;
 use app\websocket\RedisGameManager;
 use think\facade\Log;
 use think\facade\Config;
+use think\worker\Server;
 
 /**
  * 骰宝WebSocket Worker - 优化版
  * 简化代码结构，保留核心功能
  */
-class Worker
+class Worker extends Server
 {
     /**
      * 定时器ID列表
