@@ -335,65 +335,79 @@ class SicboBetController extends BaseController
         }
     }
 
-    /**
-     * 获取用户余额信息 - 已修复
-     * 路由: GET /sicbo/bet/balance
-     */
-    public function getUserBalance()
-    {
-        try {
-            $userId = $this->getCurrentUserId();
-
-            // 简单查询用户余额
-            $user = Db::name('user')
-                ->where('id', $userId)
-                ->field('money_balance')
-                ->find();
-
-            if (!$user) {
-                return json(['code' => 404, 'message' => '用户不存在']);
-            }
-
-            // 计算冻结金额
-            $frozenAmount = 0;
-            try {
-                $frozenAmount = Db::name('sicbo_bet_records')
-                    ->where('user_id', $userId)
-                    ->where('settle_status', self::SETTLE_STATUS_PENDING)
-                    ->sum('bet_amount');
-            } catch (\Exception $e) {
-                // 如果查询失败，冻结金额为0
-                $frozenAmount = 0;
-            }
-
-            $frozenAmount = (float)($frozenAmount ?? 0);
-            $totalBalance = (float)($user['money_balance'] ?? 0);
-
+/**
+ * 获取用户余额信息 - 修复表名
+ * 路由: GET /sicbo/bet/balance
+ */
+public function getUserBalance()
+{
+    try {
+        $userId = $this->getCurrentUserId();
+        
+        if ($userId <= 0) {
             return json([
-                'code' => 200,
-                'message' => 'success',
-                'data' => [
-                    'total_balance' => $totalBalance,
-                    'frozen_amount' => $frozenAmount,
-                    'available_balance' => $totalBalance - $frozenAmount,
-                    'currency' => 'CNY',
-                    'last_update' => date('Y-m-d H:i:s'),
-                    'update_time' => time()
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            return json([
-                'code' => 500,
-                'message' => '获取余额失败：' . $e->getMessage(),
+                'code' => 400,
+                'message' => '用户ID无效',
                 'debug' => [
-                    'user_id' => $userId ?? 'unknown',
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine()
+                    'user_id' => $userId,
+                    'headers' => $this->request->header()
                 ]
             ]);
         }
+
+        // 修改表名：从 dianji_user 改为 common_user
+        $user = Db::name('common_user')->where('id', $userId)->find();
+        
+        if (!$user) {
+            return json([
+                'code' => 404, 
+                'message' => '用户不存在',
+                'debug' => [
+                    'user_id' => $userId,
+                    'table_name' => 'ntp_common_user',
+                    'query' => "SELECT * FROM ntp_common_user WHERE id = {$userId}"
+                ]
+            ]);
+        }
+
+        // 计算冻结金额（当前未结算的投注）
+        $frozenAmount = 0;
+        try {
+            $frozenAmount = Db::name('sicbo_bet_records')
+                ->where('user_id', $userId)
+                ->where('settle_status', 0) // 0=未结算
+                ->sum('bet_amount');
+            $frozenAmount = (float)($frozenAmount ?? 0);
+        } catch (\Exception $e) {
+            // 如果表不存在，冻结金额为0
+            $frozenAmount = 0;
+        }
+
+        return json([
+            'code' => 200,
+            'message' => 'success',
+            'data' => [
+                'user_id' => $userId,
+                'total_balance' => (float)$user['money_balance'],
+                'frozen_amount' => $frozenAmount,
+                'available_balance' => (float)$user['money_balance'] - $frozenAmount,
+                'currency' => 'CNY',
+                'last_update' => time()
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        return json([
+            'code' => 500,
+            'message' => '获取用户余额失败：' . $e->getMessage(),
+            'debug' => [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'user_id' => $userId ?? 'unknown'
+            ]
+        ]);
     }
+}
 
     /**
      * 获取投注限额信息 - 已修复
@@ -641,7 +655,7 @@ class SicboBetController extends BaseController
     {
         try {
             // 简化检查：只验证用户是否存在
-            $user = Db::name('user')->where('id', $userId)->find();
+            $user = Db::name('common_user')->where('id', $userId)->find();
             if (!$user) {
                 return json(['code' => 404, 'message' => '用户不存在']);
             }

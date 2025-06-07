@@ -15,7 +15,7 @@ class UserModel extends Model
     use SoftDelete;
 
     // 数据表名
-    protected $name = 'user';
+    protected $name = 'common_user';
     
     // 主键
     protected $pk = 'id';
