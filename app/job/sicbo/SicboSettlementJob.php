@@ -5,20 +5,22 @@ namespace app\job\sicbo;
 use app\model\sicbo\SicboGameResults;
 use app\model\sicbo\SicboBetRecords;
 use app\model\User;
-use app\model\UserBalance;
-use app\model\UserBalanceLog;
+use app\model\MoneyLog;
+use app\service\sicbo\SicboCalculateService;
+use app\service\sicbo\UserBalanceService;
 use think\queue\Job;
 use think\facade\Db;
 use think\facade\Log;
+use think\facade\Cache;
 
 /**
  * 骰宝投注结算任务 - 简化版
  * 
  * 唯一职责：
  * 1. 读取开奖结果
- * 2. 计算所有投注的输赢
+ * 2. 计算所有投注的输赢（委托给Service）
  * 3. 更新用户余额到数据库
- * 4. 触发WebSocket推送中奖信息
+ * 4. 存储中奖信息到Redis，由WebSocket定时器推送
  */
 class SicboSettlementJob
 {
@@ -31,10 +33,9 @@ class SicboSettlementJob
     private const SETTLE_STATUS_REFUND = 3;     // 已退款
 
     /**
-     * 余额变动类型
+     * Redis Key 命名规范
      */
-    private const BALANCE_TYPE_WIN = 'sicbo_win';       // 骰宝中奖
-    private const BALANCE_TYPE_REFUND = 'sicbo_refund'; // 骰宝退款
+    private const REDIS_KEY_WIN_NOTIFICATIONS = 'sicbo:notifications:win';
 
     /**
      * 执行结算任务
@@ -135,8 +136,8 @@ class SicboSettlementJob
                 return ['success' => false, 'error' => '没有待结算的投注记录'];
             }
 
-            // 3. 计算中奖投注类型
-            $winningBetTypes = $this->calculateWinningBetTypes($gameResult);
+            // 3. 使用Service计算中奖投注类型
+            $winningBetTypes = SicboCalculateService::calculateWinningBetTypes($gameResult);
 
             // 4. 处理每笔投注的结算
             $settlementResults = [];
@@ -165,8 +166,8 @@ class SicboSettlementJob
             // 5. 提交事务
             Db::commit();
 
-            // 6. 推送中奖信息
-            $this->notifyWinners($settlementResults);
+            // 6. 存储中奖信息到Redis
+            $this->storeWinNotifications($gameNumber, $settlementResults);
 
             return [
                 'success' => true,
@@ -212,91 +213,6 @@ class SicboSettlementJob
     }
 
     /**
-     * 计算中奖的投注类型
-     * 
-     * @param SicboGameResults $gameResult
-     * @return array
-     */
-    private function calculateWinningBetTypes(SicboGameResults $gameResult): array
-    {
-        $winningTypes = [];
-        
-        $dice1 = $gameResult->dice1;
-        $dice2 = $gameResult->dice2;
-        $dice3 = $gameResult->dice3;
-        $totalPoints = $dice1 + $dice2 + $dice3;
-        
-        // 计算基础属性
-        $isBig = ($totalPoints >= 11 && $totalPoints <= 17);
-        $isOdd = ($totalPoints % 2 === 1);
-        $diceArray = [$dice1, $dice2, $dice3];
-        $diceCount = array_count_values($diceArray);
-        
-        // 检查三同号和对子
-        $hasTriple = false;
-        $tripleNumber = null;
-        $hasPair = false;
-        
-        foreach ($diceCount as $diceNumber => $count) {
-            if ($count === 3) {
-                $hasTriple = true;
-                $tripleNumber = $diceNumber;
-            } elseif ($count === 2) {
-                $hasPair = true;
-            }
-        }
-
-        // 基础投注
-        if ($isBig) {
-            $winningTypes[] = 'big';
-        } else {
-            $winningTypes[] = 'small';
-        }
-
-        if ($isOdd) {
-            $winningTypes[] = 'odd';
-        } else {
-            $winningTypes[] = 'even';
-        }
-
-        // 总和投注
-        $winningTypes[] = "total-{$totalPoints}";
-
-        // 单骰投注
-        foreach ($diceCount as $diceNumber => $count) {
-            $winningTypes[] = "single-{$diceNumber}";
-        }
-
-        // 对子投注
-        if ($hasPair) {
-            foreach ($diceCount as $diceNumber => $count) {
-                if ($count >= 2) {
-                    $winningTypes[] = "pair-{$diceNumber}";
-                }
-            }
-        }
-
-        // 三同号投注
-        if ($hasTriple) {
-            $winningTypes[] = "triple-{$tripleNumber}";
-            $winningTypes[] = 'any-triple';
-        }
-
-        // 组合投注
-        $uniqueDice = array_unique($diceArray);
-        if (count($uniqueDice) >= 2) {
-            sort($uniqueDice);
-            for ($i = 0; $i < count($uniqueDice) - 1; $i++) {
-                for ($j = $i + 1; $j < count($uniqueDice); $j++) {
-                    $winningTypes[] = "combo-{$uniqueDice[$i]}-{$uniqueDice[$j]}";
-                }
-            }
-        }
-
-        return array_unique($winningTypes);
-    }
-
-    /**
      * 结算单笔投注
      * 
      * @param SicboBetRecords $betRecord
@@ -324,11 +240,13 @@ class SicboSettlementJob
             ]);
 
             // 如果中奖，更新用户余额
+            $newBalance = 0;
             if ($isWin && $winAmount > 0) {
-                $balanceResult = $this->updateUserBalance($userId, $winAmount, $betRecord->id);
+                $balanceResult = UserBalanceService::addWinAmount($userId, $winAmount, $betRecord->id);
                 if (!$balanceResult['success']) {
                     throw new \Exception("更新用户余额失败: " . $balanceResult['error']);
                 }
+                $newBalance = $balanceResult['after_balance'];
             }
 
             return [
@@ -340,7 +258,7 @@ class SicboSettlementJob
                 'bet_type' => $betType,
                 'bet_amount' => $betAmount,
                 'odds' => $odds,
-                'new_balance' => $balanceResult['after_balance'] ?? 0
+                'new_balance' => $newBalance
             ];
 
         } catch (\Exception $e) {
@@ -352,63 +270,19 @@ class SicboSettlementJob
     }
 
     /**
-     * 更新用户余额
+     * 存储中奖信息到Redis
      * 
-     * @param int $userId
-     * @param float $winAmount
-     * @param int $betId
-     * @return array
-     */
-    private function updateUserBalance(int $userId, float $winAmount, int $betId): array
-    {
-        try {
-            // 获取用户余额记录
-            $userBalance = UserBalance::where('user_id', $userId)->find();
-            if (!$userBalance) {
-                return ['success' => false, 'error' => '用户余额记录不存在'];
-            }
-
-            $beforeBalance = $userBalance->balance;
-            $afterBalance = $beforeBalance + $winAmount;
-
-            // 更新余额
-            $userBalance->save([
-                'balance' => $afterBalance,
-                'updated_at' => date('Y-m-d H:i:s')
-            ]);
-
-            // 记录余额变动日志
-            UserBalanceLog::create([
-                'user_id' => $userId,
-                'type' => self::BALANCE_TYPE_WIN,
-                'amount' => $winAmount,
-                'before_balance' => $beforeBalance,
-                'after_balance' => $afterBalance,
-                'remark' => "骰宝中奖",
-                'related_id' => $betId,
-                'created_at' => date('Y-m-d H:i:s')
-            ]);
-
-            return [
-                'success' => true,
-                'before_balance' => $beforeBalance,
-                'after_balance' => $afterBalance
-            ];
-
-        } catch (\Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-    /**
-     * 推送中奖信息给用户
-     * 
+     * @param string $gameNumber
      * @param array $settlementResults 中奖用户的结算结果
      * @return void
      */
-    private function notifyWinners(array $settlementResults): void
+    private function storeWinNotifications(string $gameNumber, array $settlementResults): void
     {
         try {
+            if (empty($settlementResults)) {
+                return;
+            }
+
             // 按用户分组中奖信息
             $userWinnings = [];
             
@@ -418,6 +292,7 @@ class SicboSettlementJob
                 if (!isset($userWinnings[$userId])) {
                     $userWinnings[$userId] = [
                         'user_id' => $userId,
+                        'game_number' => $gameNumber,
                         'total_win_amount' => 0,
                         'win_bets' => [],
                         'new_balance' => $result['new_balance']
@@ -433,63 +308,47 @@ class SicboSettlementJob
                 ];
             }
 
-            // 逐个推送给中奖用户
+            // 批量存储到Redis
+            $storedCount = 0;
+            
             foreach ($userWinnings as $userWinning) {
-                $this->sendWinNotification($userWinning);
+                // 构建中奖通知数据
+                $winNotification = [
+                    'user_id' => $userWinning['user_id'],
+                    'game_number' => $userWinning['game_number'],
+                    'win_amount' => $userWinning['total_win_amount'],
+                    'win_bets' => $userWinning['win_bets'],
+                    'win_bets_count' => count($userWinning['win_bets']),
+                    'new_balance' => $userWinning['new_balance'],
+                    'message' => $this->formatWinMessage($userWinning['total_win_amount'], count($userWinning['win_bets'])),
+                    'created_at' => time()
+                ];
+
+                // 存储到Redis队列
+                Cache::store('redis')->lPush(self::REDIS_KEY_WIN_NOTIFICATIONS, json_encode($winNotification));
+                $storedCount++;
+                
+                echo "[" . date('Y-m-d H:i:s') . "] 中奖信息入队: UserID {$userWinning['user_id']}, 金额 {$userWinning['total_win_amount']}\n";
             }
 
-            if (!empty($userWinnings)) {
-                echo "[" . date('Y-m-d H:i:s') . "] 推送中奖信息: " . count($userWinnings) . "位中奖用户\n";
+            // 设置队列过期时间（24小时）
+            if ($storedCount > 0) {
+                Cache::store('redis')->expire(self::REDIS_KEY_WIN_NOTIFICATIONS, 86400);
+                
+                Log::info("中奖信息批量存储完成", [
+                    'game_number' => $gameNumber,
+                    'stored_count' => $storedCount,
+                    'total_win_users' => count($userWinnings)
+                ]);
+                
+                echo "[" . date('Y-m-d H:i:s') . "] 批量存储中奖信息完成: {$storedCount}位中奖用户\n";
             }
 
         } catch (\Exception $e) {
-            Log::error("推送中奖信息失败", [
+            Log::error("存储中奖信息到Redis失败", [
+                'game_number' => $gameNumber,
                 'error' => $e->getMessage(),
                 'settlement_count' => count($settlementResults)
-            ]);
-        }
-    }
-
-    /**
-     * 发送单个用户的中奖通知
-     * 
-     * @param array $userWinning
-     * @return void
-     */
-    private function sendWinNotification(array $userWinning): void
-    {
-        try {
-            $userId = $userWinning['user_id'];
-            $totalWinAmount = $userWinning['total_win_amount'];
-            $winBetsCount = count($userWinning['win_bets']);
-
-            // 构建中奖信息
-            $winData = [
-                'type' => 'win_info',
-                'data' => [
-                    'user_id' => $userId,
-                    'win_amount' => $totalWinAmount,
-                    'win_bets' => $userWinning['win_bets'],
-                    'win_bets_count' => $winBetsCount,
-                    'new_balance' => $userWinning['new_balance'],
-                    'message' => $this->formatWinMessage($totalWinAmount, $winBetsCount)
-                ],
-                'timestamp' => time()
-            ];
-
-            // 使用 worker_tcp 推送给用户
-            worker_tcp($userId, '中奖通知', $winData, 200);
-
-            Log::info("发送中奖通知", [
-                'user_id' => $userId,
-                'win_amount' => $totalWinAmount,
-                'win_bets_count' => $winBetsCount
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error("发送中奖通知失败", [
-                'user_id' => $userId ?? 0,
-                'error' => $e->getMessage()
             ]);
         }
     }
@@ -513,7 +372,8 @@ class SicboSettlementJob
     }
 
     /**
-     * 处理结算失败情况（退款）
+     * 处理结算失败情况 - 简化版
+     * 不自动退款，保持等待状态，让后台人员手动处理
      * 
      * @param string $gameNumber
      * @param int $tableId
@@ -523,65 +383,35 @@ class SicboSettlementJob
     private function handleSettlementFailure(string $gameNumber, int $tableId, string $error): void
     {
         try {
-            Log::error("结算失败，开始退款处理", [
+            // 只记录失败日志，不做任何自动操作
+            Log::error("结算失败，需要人工处理", [
                 'game_number' => $gameNumber,
                 'table_id' => $tableId,
-                'error' => $error
+                'error' => $error,
+                'status' => '投注记录保持等待状态',
+                'action_required' => '需要后台人员手动处理'
             ]);
 
-            // 查找所有未结算的投注记录
-            $betRecords = SicboBetRecords::where('game_number', $gameNumber)
+            // 统计待处理的投注数量
+            $pendingBetsCount = SicboBetRecords::where('game_number', $gameNumber)
                 ->where('table_id', $tableId)
                 ->where('settle_status', self::SETTLE_STATUS_PENDING)
-                ->select();
+                ->count();
 
-            if ($betRecords->isEmpty()) {
-                return;
-            }
-
-            Db::startTrans();
-
-            $refundCount = 0;
-            foreach ($betRecords as $betRecord) {
-                // 退还投注金额
-                $refundResult = $this->updateUserBalance(
-                    $betRecord->user_id,
-                    $betRecord->bet_amount,
-                    $betRecord->id
-                );
-
-                if ($refundResult['success']) {
-                    // 更新投注记录状态为已退款
-                    $betRecord->save([
-                        'settle_status' => self::SETTLE_STATUS_REFUND,
-                        'settle_time' => date('Y-m-d H:i:s'),
-                        'win_amount' => 0,
-                        'is_win' => 0
-                    ]);
-                    $refundCount++;
-                }
-            }
-
-            Db::commit();
-
-            Log::info("退款处理完成", [
-                'game_number' => $gameNumber,
-                'refund_count' => $refundCount
-            ]);
-
-            echo "[" . date('Y-m-d H:i:s') . "] 退款完成: {$gameNumber}, 退款{$refundCount}笔投注\n";
+            echo "[" . date('Y-m-d H:i:s') . "] 结算失败: {$gameNumber}, {$pendingBetsCount}笔投注需要人工处理\n";
 
         } catch (\Exception $e) {
-            Db::rollback();
-            Log::error("退款处理失败", [
+            Log::error("结算失败处理异常", [
                 'game_number' => $gameNumber,
-                'error' => $e->getMessage()
+                'table_id' => $tableId,
+                'original_error' => $error,
+                'handling_error' => $e->getMessage()
             ]);
         }
     }
 
     /**
-     * 静态方法：触发结算任务
+     * 静态方法：直接同步执行结算任务
      * 
      * @param string $gameNumber
      * @param int $tableId
@@ -590,17 +420,25 @@ class SicboSettlementJob
     public static function triggerSettlement(string $gameNumber, int $tableId): bool
     {
         try {
+            // 直接同步执行结算，不使用队列
+            $job = new self();
             $jobData = [
                 'game_number' => $gameNumber,
                 'table_id' => $tableId,
                 'timestamp' => time()
             ];
 
-            // 推送到队列
-            // Queue::push(self::class, $jobData);
+            // 模拟Job对象（用于兼容fire方法的参数）
+            $mockJob = new class {
+                private $attempts = 1;
+                public function attempts() { return $this->attempts; }
+                public function delete() { return true; }
+                public function release($delay) { $this->attempts++; }
+            };
+
+            $job->fire($mockJob, $jobData);
             
-            Log::info("触发结算任务", $jobData);
-            echo "[" . date('Y-m-d H:i:s') . "] 触发结算任务: {$gameNumber}\n";
+            Log::info("同步执行结算任务完成", $jobData);
             
             return true;
 
@@ -612,5 +450,16 @@ class SicboSettlementJob
             ]);
             return false;
         }
+    }
+
+    /**
+     * 获取Redis中奖通知队列的Key
+     * 供WebSocket定时器使用
+     * 
+     * @return string
+     */
+    public static function getWinNotificationsRedisKey(): string
+    {
+        return self::REDIS_KEY_WIN_NOTIFICATIONS;
     }
 }
