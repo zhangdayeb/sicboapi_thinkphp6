@@ -60,7 +60,15 @@ class SicboSettlementService
     /**
      * 计算服务实例
      */
-    private SicboCalculationService $calculationService;
+    /**
+     * @var SicboCalculationService
+     */
+    private $calculationService;
+
+    /**
+     * @var SicboSettlementService  
+     */
+    private $settlementService;
 
     /**
      * 构造函数

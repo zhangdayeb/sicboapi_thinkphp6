@@ -74,8 +74,15 @@ class SicboGameService
     /**
      * 服务依赖注入
      */
-    private SicboCalculationService $calculationService;
-    private SicboSettlementService $settlementService;
+    /**
+     * @var SicboCalculationService
+     */
+    private $calculationService;
+
+    /**
+     * @var SicboSettlementService  
+     */
+    private $settlementService;
 
     /**
      * 构造函数

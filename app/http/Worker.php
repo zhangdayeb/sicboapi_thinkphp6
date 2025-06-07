@@ -29,15 +29,15 @@ use think\facade\Db;
  */
 class Worker
 {
-    /**
-     * Worker实例
-     */
-    private static ?Worker $worker = null;
+/**
+ * @var Worker|null
+ */
+private static $worker = null;
 
-    /**
-     * ThinkPHP应用实例
-     */
-    private static ?App $app = null;
+/**
+ * @var App|null  
+ */
+private static $app = null;
 
     /**
      * 连接管理
