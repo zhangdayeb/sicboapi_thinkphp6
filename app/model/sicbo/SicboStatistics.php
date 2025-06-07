@@ -1,9 +1,9 @@
 <?php
 
-
 namespace app\model\sicbo;
 
 use think\Model;
+use think\facade\Db;
 
 /**
  * 骰宝游戏统计模型
@@ -23,7 +23,7 @@ class SicboStatistics extends Model
     protected $createTime = 'created_at';
     protected $updateTime = 'updated_at';
 
-    // 数据类型转换
+    // 数据类型转换 - 统一使用datetime
     protected $type = [
         'id'                   => 'integer',
         'table_id'             => 'integer',
@@ -40,8 +40,8 @@ class SicboStatistics extends Model
         'total_bet_amount'     => 'float',
         'total_win_amount'     => 'float',
         'player_count'         => 'integer',
-        'created_at'           => 'timestamp',
-        'updated_at'           => 'timestamp',
+        'created_at'           => 'datetime',
+        'updated_at'           => 'datetime',
     ];
 
     // 只读字段
@@ -245,7 +245,7 @@ class SicboStatistics extends Model
     }
 
     /**
-     * 生成每日统计报告
+     * 生成每日统计报告 - 修复事务方法
      * @param int $tableId 台桌ID
      * @param string $date 统计日期
      * @return bool
@@ -493,7 +493,7 @@ class SicboStatistics extends Model
     }
 
     /**
-     * 批量生成统计报告
+     * 批量生成统计报告 - 修复事务方法
      * @param array $tableIds 台桌ID数组
      * @param string $date 统计日期
      * @return bool
@@ -501,16 +501,16 @@ class SicboStatistics extends Model
     public static function batchGenerateReports(array $tableIds, string $date): bool
     {
         try {
-            self::startTrans();
+            Db::startTrans(); // 修复：使用Db::而不是self::
             
             foreach ($tableIds as $tableId) {
                 self::generateDailyReport($tableId, $date);
             }
             
-            self::commit();
+            Db::commit(); // 修复：使用Db::而不是self::
             return true;
         } catch (\Exception $e) {
-            self::rollback();
+            Db::rollback(); // 修复：使用Db::而不是self::
             return false;
         }
     }
@@ -538,6 +538,25 @@ class SicboStatistics extends Model
         
         return $query->order('ss.stat_date desc')
             ->limit($conditions['limit'] ?? 1000)
+            ->select()
+            ->toArray();
+    }
+
+    /**
+     * 获取指定小时的统计 - 新增方法
+     * @param int $tableId 台桌ID  
+     * @param int $hours 小时数
+     * @return array
+     */
+    public static function getHourlyStats(int $tableId, int $hours): array
+    {
+        $startTime = date('Y-m-d H:i:s', strtotime("-{$hours} hours"));
+        $endTime = date('Y-m-d H:i:s');
+        
+        return self::where('table_id', $tableId)
+            ->where('stat_type', self::STAT_TYPE_HOURLY)
+            ->whereBetweenTime('created_at', $startTime, $endTime)
+            ->order('created_at desc')
             ->select()
             ->toArray();
     }
