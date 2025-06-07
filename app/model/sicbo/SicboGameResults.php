@@ -1,6 +1,5 @@
 <?php
 
-
 namespace app\model\sicbo;
 
 use think\Model;
@@ -21,7 +20,7 @@ class SicboGameResults extends Model
     // 主键
     protected $pk = 'id';
     
-    // 自动时间戳
+    // 自动时间戳 - 开启以支持软删除
     protected $autoWriteTimestamp = true;
     protected $createTime = 'created_at';
     protected $updateTime = 'updated_at';
@@ -30,7 +29,7 @@ class SicboGameResults extends Model
     // 软删除时间字段默认值
     protected $defaultSoftDelete = null;
 
-    // 数据类型转换
+    // 数据类型转换 - 统一使用datetime
     protected $type = [
         'id'            => 'integer',
         'table_id'      => 'integer', 
@@ -46,8 +45,8 @@ class SicboGameResults extends Model
         'has_pair'      => 'integer',
         'status'        => 'integer',
         'winning_bets'  => 'json',
-        'created_at'    => 'timestamp',
-        'updated_at'    => 'timestamp',
+        'created_at'    => 'datetime',
+        'updated_at'    => 'datetime',
     ];
 
     // 只读字段

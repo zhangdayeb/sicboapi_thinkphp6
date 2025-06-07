@@ -1,10 +1,10 @@
 <?php
 
-
 namespace app\model\sicbo;
 
 use think\Model;
 use think\model\concern\SoftDelete;
+use think\facade\Db;
 
 /**
  * 骰宝投注记录模型
@@ -21,14 +21,16 @@ class SicboBetRecords extends Model
     // 主键
     protected $pk = 'id';
     
-    // 自动时间戳
-    protected $autoWriteTimestamp = false; // 使用自定义时间字段
+    // 自动时间戳 - 开启以支持软删除
+    protected $autoWriteTimestamp = true;
+    protected $createTime = 'bet_time';
+    protected $updateTime = 'settle_time';
     protected $deleteTime = 'deleted_at';
     
     // 软删除时间字段默认值
     protected $defaultSoftDelete = null;
 
-    // 数据类型转换
+    // 数据类型转换 - 统一使用datetime
     protected $type = [
         'id'              => 'integer',
         'user_id'         => 'integer',
@@ -41,9 +43,9 @@ class SicboBetRecords extends Model
         'settle_status'   => 'integer',
         'balance_before'  => 'float',
         'balance_after'   => 'float',
-        'bet_time'        => 'timestamp',
-        'settle_time'     => 'timestamp',
-        'deleted_at'      => 'timestamp',
+        'bet_time'        => 'datetime',
+        'settle_time'     => 'datetime',
+        'deleted_at'      => 'datetime',
     ];
 
     // 只读字段
@@ -176,7 +178,7 @@ class SicboBetRecords extends Model
     }
 
     /**
-     * 结算游戏投注
+     * 结算游戏投注 - 修复事务方法
      * @param string $gameNumber 游戏局号
      * @param array $winningBets 中奖投注类型
      * @return bool
@@ -184,7 +186,7 @@ class SicboBetRecords extends Model
     public static function settleBets(string $gameNumber, array $winningBets): bool
     {
         try {
-            self::startTrans();
+            Db::startTrans(); // 修复：使用Db::而不是self::
             
             $bets = self::where('game_number', $gameNumber)
                 ->where('settle_status', self::SETTLE_STATUS_PENDING)
@@ -202,10 +204,10 @@ class SicboBetRecords extends Model
                 ]);
             }
             
-            self::commit();
+            Db::commit(); // 修复：使用Db::而不是self::
             return true;
         } catch (\Exception $e) {
-            self::rollback();
+            Db::rollback(); // 修复：使用Db::而不是self::
             return false;
         }
     }
@@ -394,9 +396,6 @@ class SicboBetRecords extends Model
     {
         return self::where('bet_amount', '>=', $threshold)
             ->whereTime('bet_time', 'today')
-            ->with(['user' => function($query) {
-                $query->field('id,username,nickname');
-            }])
             ->order('bet_amount desc')
             ->limit($limit)
             ->select()
