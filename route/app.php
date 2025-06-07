@@ -17,6 +17,12 @@ Route::get('/', 'Index/index')->name('homepage');
 // 测试页面路由 - 直接访问测试页面
 Route::get('/test', 'Index/index')->name('test_page');
 
+// 调试路由 - 用于诊断问题
+Route::get('/debug', 'Debug/index')->name('debug_info');
+Route::get('/debug/health', 'Debug/health')->name('debug_health');
+Route::get('/debug/test', 'Debug/test')->name('debug_test');
+Route::get('/debug/routes', 'Debug/routes')->name('debug_routes');
+
 /**
  * 测试相关路由组
  * 前缀: /test

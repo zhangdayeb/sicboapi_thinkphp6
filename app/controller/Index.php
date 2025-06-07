@@ -758,20 +758,31 @@ class Index
      */
     public function quickHealthCheck()
     {
-        $checks = [
-            'database' => $this->checkDatabase(),
-            'cache' => $this->checkCache(),
-            'tables' => $this->checkTables(),
-            'services' => $this->checkServices()
-        ];
+        try {
+            $checks = [
+                'database' => $this->checkDatabase(),
+                'cache' => $this->checkCache(),
+                'tables' => $this->checkTables(),
+                'services' => $this->checkServices()
+            ];
 
-        $allPassed = !in_array(false, $checks);
+            $allPassed = !in_array(false, $checks);
 
-        return json([
-            'status' => $allPassed ? 'healthy' : 'unhealthy',
-            'checks' => $checks,
-            'timestamp' => time()
-        ]);
+            return json([
+                'status' => $allPassed ? 'healthy' : 'unhealthy',
+                'checks' => $checks,
+                'timestamp' => time(),
+                'message' => $allPassed ? '系统运行正常' : '系统存在问题'
+            ]);
+        } catch (\Exception $e) {
+            return json([
+                'status' => 'error',
+                'checks' => [],
+                'timestamp' => time(),
+                'error' => $e->getMessage(),
+                'message' => '健康检查执行失败'
+            ]);
+        }
     }
 
     /**

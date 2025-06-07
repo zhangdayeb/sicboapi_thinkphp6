@@ -359,7 +359,33 @@
             showLoading();
             
             try {
-                const response = await fetch('/test/sicbo/full');
+                // 尝试多个可能的路径
+                let response;
+                const urls = [
+                    '/test/sicbo/full',
+                    '/index/testSicboSystemFull'
+                ];
+                
+                for (const url of urls) {
+                    try {
+                        response = await fetch(url);
+                        if (response.ok) {
+                            break;
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+                
+                if (!response || !response.ok) {
+                    throw new Error('无法访问测试接口');
+                }
+                
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('服务器返回了非JSON格式的响应，可能是PHP错误');
+                }
+                
                 const data = await response.json();
                 displayTestResults(data);
             } catch (error) {
@@ -372,7 +398,34 @@
             showLoading();
             
             try {
-                const response = await fetch('/test/health');
+                // 尝试多个可能的路径
+                let response;
+                const urls = [
+                    '/test/health',
+                    '/health', 
+                    '/index/quickHealthCheck'
+                ];
+                
+                for (const url of urls) {
+                    try {
+                        response = await fetch(url);
+                        if (response.ok) {
+                            break;
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+                
+                if (!response || !response.ok) {
+                    throw new Error('无法访问健康检查接口');
+                }
+                
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('服务器返回了非JSON格式的响应');
+                }
+                
                 const data = await response.json();
                 displayHealthCheck(data);
             } catch (error) {
@@ -417,9 +470,35 @@
             showLoading();
             
             try {
-                const response = await fetch('/test/cleanup', {
-                    method: 'POST'
-                });
+                // 尝试多个可能的路径
+                let response;
+                const urls = [
+                    '/test/cleanup',
+                    '/index/cleanupTestData'
+                ];
+                
+                for (const url of urls) {
+                    try {
+                        response = await fetch(url, {
+                            method: 'POST'
+                        });
+                        if (response.ok) {
+                            break;
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+                
+                if (!response || !response.ok) {
+                    throw new Error('无法访问清理接口');
+                }
+                
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('服务器返回了非JSON格式的响应');
+                }
+                
                 const data = await response.json();
                 
                 if (data.success) {
