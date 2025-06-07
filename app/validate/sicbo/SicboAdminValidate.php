@@ -3,7 +3,7 @@
 // app/validate/sicbo/SicboAdminValidate.php
 // 管理操作验证器
 // ==========================================
-declare(strict_types=1);
+
 
 namespace app\validate\sicbo;
 

@@ -1,5 +1,5 @@
 <?php
-declare(strict_types=1);
+
 
 namespace app\controller\sicbo;
 
@@ -22,7 +22,7 @@ class SicboGameController extends BaseController
      * 获取台桌游戏信息
      * 路由: GET /sicbo/game/table-info
      */
-    public function getTableInfo(): Response
+    public function getTableInfo()
     {
         $tableId = $this->request->param('table_id/d', 0);
         
@@ -81,7 +81,7 @@ class SicboGameController extends BaseController
      * 获取游戏历史记录
      * 路由: GET /sicbo/game/history
      */
-    public function getGameHistory(): Response
+    public function getGameHistory()
     {
         $tableId = $this->request->param('table_id/d', 0);
         $limit = $this->request->param('limit/d', 20);
@@ -130,7 +130,7 @@ class SicboGameController extends BaseController
      * 获取游戏统计数据
      * 路由: GET /sicbo/game/statistics
      */
-    public function getStatistics(): Response
+    public function getStatistics()
     {
         $tableId = $this->request->param('table_id/d', 0);
         $type = $this->request->param('type', 'daily');
@@ -181,7 +181,7 @@ class SicboGameController extends BaseController
      * 开始新游戏局
      * 路由: POST /sicbo/game/start
      */
-    public function startNewGame(): Response
+    public function startNewGame()
     {
         $tableId = $this->request->param('table_id/d', 0);
         $bettingTime = $this->request->param('betting_time/d', 30);
@@ -248,7 +248,7 @@ class SicboGameController extends BaseController
      * 停止投注
      * 路由: POST /sicbo/game/stop-betting
      */
-    public function stopBetting(): Response
+    public function stopBetting()
     {
         $tableId = $this->request->param('table_id/d', 0);
         $gameNumber = $this->request->param('game_number', '');
@@ -292,7 +292,7 @@ class SicboGameController extends BaseController
      * 公布开奖结果
      * 路由: POST /sicbo/game/announce-result
      */
-    public function announceResult(): Response
+    public function announceResult()
     {
         $params = $this->request->only(['table_id', 'game_number', 'dice1', 'dice2', 'dice3']);
         
@@ -382,7 +382,7 @@ class SicboGameController extends BaseController
      * 获取当前投注统计
      * 路由: GET /sicbo/game/bet-stats
      */
-    public function getCurrentBetStats(): Response
+    public function getCurrentBetStats()
     {
         $tableId = $this->request->param('table_id/d', 0);
         $gameNumber = $this->request->param('game_number', '');
@@ -413,7 +413,7 @@ class SicboGameController extends BaseController
      * 获取赔率信息
      * 路由: GET /sicbo/game/odds
      */
-    public function getOddsInfo(): Response
+    public function getOddsInfo()
     {
         $tableId = $this->request->param('table_id/d', 0);
 

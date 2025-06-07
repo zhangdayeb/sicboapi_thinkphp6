@@ -1,5 +1,5 @@
 <?php
-declare(strict_types=1);
+
 
 namespace app\controller\sicbo;
 
@@ -31,7 +31,7 @@ class SicboAdminController extends BaseController
      * 获取台桌列表
      * 路由: GET /sicbo/admin/tables
      */
-    public function getTableList(): Response
+    public function getTableList()
     {
         // 获取所有骰宝台桌
         $tables = Table::where('game_type', 9)
@@ -77,7 +77,7 @@ class SicboAdminController extends BaseController
      * 更新台桌设置
      * 路由: PUT /sicbo/admin/table/{table_id}
      */
-    public function updateTableConfig(): Response
+    public function updateTableConfig()
     {
         $tableId = $this->request->param('table_id/d', 0);
         $params = $this->request->only(['table_title', 'table_status', 'game_config']);
@@ -127,7 +127,7 @@ class SicboAdminController extends BaseController
      * 台桌开关控制
      * 路由: POST /sicbo/admin/table/{table_id}/toggle
      */
-    public function toggleTableStatus(): Response
+    public function toggleTableStatus()
     {
         $tableId = $this->request->param('table_id/d', 0);
         $action = $this->request->param('action', '');
@@ -212,7 +212,7 @@ class SicboAdminController extends BaseController
      * 荷官开始游戏
      * 路由: POST /sicbo/admin/dealer/start-game
      */
-    public function dealerStartGame(): Response
+    public function dealerStartGame()
     {
         $params = $this->request->only(['table_id', 'dealer_id', 'betting_duration']);
         
@@ -282,7 +282,7 @@ class SicboAdminController extends BaseController
      * 荷官录入开奖结果
      * 路由: POST /sicbo/admin/dealer/input-result
      */
-    public function dealerInputResult(): Response
+    public function dealerInputResult()
     {
         $params = $this->request->only(['table_id', 'game_number', 'dice1', 'dice2', 'dice3', 'dealer_id']);
         
@@ -374,7 +374,7 @@ class SicboAdminController extends BaseController
      * 荷官强制结束游戏
      * 路由: POST /sicbo/admin/dealer/force-end
      */
-    public function dealerForceEnd(): Response
+    public function dealerForceEnd()
     {
         $params = $this->request->only(['table_id', 'game_number', 'reason', 'dealer_id']);
         
@@ -428,7 +428,7 @@ class SicboAdminController extends BaseController
      * 获取实时监控数据
      * 路由: GET /sicbo/admin/monitor/realtime
      */
-    public function getRealtimeMonitor(): Response
+    public function getRealtimeMonitor()
     {
         $tableId = $this->request->param('table_id/d', 0);
         
@@ -462,7 +462,7 @@ class SicboAdminController extends BaseController
      * 获取财务报表
      * 路由: GET /sicbo/admin/report/financial
      */
-    public function getFinancialReport(): Response
+    public function getFinancialReport()
     {
         $params = $this->request->only(['date_range', 'table_id', 'report_type', 'start_date', 'end_date']);
         
@@ -509,7 +509,7 @@ class SicboAdminController extends BaseController
      * 获取用户行为分析
      * 路由: GET /sicbo/admin/report/user-behavior
      */
-    public function getUserBehaviorReport(): Response
+    public function getUserBehaviorReport()
     {
         $params = $this->request->only(['date_range', 'user_type', 'start_date', 'end_date']);
         
@@ -562,7 +562,7 @@ class SicboAdminController extends BaseController
      * 获取赔率配置
      * 路由: GET /sicbo/admin/config/odds
      */
-    public function getOddsConfig(): Response
+    public function getOddsConfig()
     {
         $odds = SicboOdds::getAllActiveOdds();
         
@@ -597,7 +597,7 @@ class SicboAdminController extends BaseController
      * 更新赔率配置
      * 路由: PUT /sicbo/admin/config/odds
      */
-    public function updateOddsConfig(): Response
+    public function updateOddsConfig()
     {
         $params = $this->request->only(['bet_type', 'odds', 'min_bet', 'max_bet', 'status']);
         
@@ -650,7 +650,7 @@ class SicboAdminController extends BaseController
      * 获取系统参数配置
      * 路由: GET /sicbo/admin/config/system
      */
-    public function getSystemConfig(): Response
+    public function getSystemConfig()
     {
         // 获取系统配置（这里假设有一个系统配置表）
         $systemConfig = [
@@ -680,7 +680,7 @@ class SicboAdminController extends BaseController
      * 更新系统参数
      * 路由: PUT /sicbo/admin/config/system
      */
-    public function updateSystemConfig(): Response
+    public function updateSystemConfig()
     {
         $params = $this->request->only(['config_key', 'config_value', 'config_type']);
         

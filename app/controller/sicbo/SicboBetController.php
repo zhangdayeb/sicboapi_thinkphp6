@@ -1,5 +1,5 @@
 <?php
-declare(strict_types=1);
+
 
 namespace app\controller\sicbo;
 
@@ -23,7 +23,7 @@ class SicboBetController extends BaseController
      * 提交用户投注
      * 路由: POST /sicbo/bet/place
      */
-    public function placeBet(): Response
+    public function placeBet()
     {
         $params = $this->request->only(['table_id', 'game_number', 'bets', 'total_amount']);
         $userId = $this->getCurrentUserId(); // 假设从session或token获取
@@ -154,7 +154,7 @@ class SicboBetController extends BaseController
      * 修改当前投注
      * 路由: PUT /sicbo/bet/modify
      */
-    public function modifyBet(): Response
+    public function modifyBet()
     {
         $params = $this->request->only(['table_id', 'game_number', 'bets']);
         $userId = $this->getCurrentUserId();
@@ -204,7 +204,7 @@ class SicboBetController extends BaseController
      * 取消当前投注
      * 路由: DELETE /sicbo/bet/cancel
      */
-    public function cancelBet(): Response
+    public function cancelBet()
     {
         $params = $this->request->only(['table_id', 'game_number']);
         $userId = $this->getCurrentUserId();
@@ -273,7 +273,7 @@ class SicboBetController extends BaseController
      * 获取用户当前投注
      * 路由: GET /sicbo/bet/current
      */
-    public function getCurrentBets(): Response
+    public function getCurrentBets()
     {
         $params = $this->request->only(['table_id', 'game_number']);
         $userId = $this->getCurrentUserId();
@@ -319,7 +319,7 @@ class SicboBetController extends BaseController
      * 获取用户投注历史
      * 路由: GET /sicbo/bet/history
      */
-    public function getBetHistory(): Response
+    public function getBetHistory()
     {
         $userId = $this->getCurrentUserId();
         $page = $this->request->param('page/d', 1);
@@ -371,7 +371,7 @@ class SicboBetController extends BaseController
      * 获取投注详情
      * 路由: GET /sicbo/bet/detail/{bet_id}
      */
-    public function getBetDetail(): Response
+    public function getBetDetail()
     {
         $betId = $this->request->param('bet_id/d', 0);
         $userId = $this->getCurrentUserId();
@@ -408,7 +408,7 @@ class SicboBetController extends BaseController
      * 获取用户余额信息
      * 路由: GET /sicbo/bet/balance
      */
-    public function getUserBalance(): Response
+    public function getUserBalance()
     {
         $userId = $this->getCurrentUserId();
         
@@ -438,7 +438,7 @@ class SicboBetController extends BaseController
      * 获取投注限额信息
      * 路由: GET /sicbo/bet/limits
      */
-    public function getBetLimits(): Response
+    public function getBetLimits()
     {
         $tableId = $this->request->param('table_id/d', 0);
         $betType = $this->request->param('bet_type', '');
@@ -486,7 +486,7 @@ class SicboBetController extends BaseController
      * 预检投注合法性
      * 路由: POST /sicbo/bet/validate
      */
-    public function validateBet(): Response
+    public function validateBet()
     {
         $params = $this->request->only(['table_id', 'bets']);
         

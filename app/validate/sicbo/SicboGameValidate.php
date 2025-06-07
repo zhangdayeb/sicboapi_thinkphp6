@@ -3,7 +3,7 @@
 // app/validate/sicbo/SicboGameValidate.php  
 // 游戏数据验证器
 // ==========================================
-declare(strict_types=1);
+
 
 namespace app\validate\sicbo;
 

@@ -100,7 +100,7 @@ abstract class Response
      * @param  int    $code 状态码
      * @return Response
      */
-    public static function create($data = '', string $type = 'html', int $code = 200): Response
+    public static function create($data = '', string $type = 'html', int $code = 200)
     {
         $class = false !== strpos($type, '\\') ? $type : '\\think\\response\\' . ucfirst(strtolower($type));
 

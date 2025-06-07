@@ -29,7 +29,7 @@ class ProviderException extends RuntimeException implements ProviderExceptionInt
         parent::__construct($message, $code, $previous);
     }
 
-    public function getResponse(): ResponseInterface
+    public function getResponse()Interface
     {
         return $this->response;
     }

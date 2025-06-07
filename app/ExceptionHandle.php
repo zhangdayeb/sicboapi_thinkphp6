@@ -48,7 +48,7 @@ class ExceptionHandle extends Handle
      * @param Throwable $e
      * @return Response
      */
-    public function render($request, Throwable $e): Response
+    public function render($request, Throwable $e)
     {
         // 添加自定义异常处理机制
 

@@ -1,5 +1,5 @@
 <?php
-declare(strict_types=1);
+
 
 namespace app\controller\sicbo;
 
@@ -41,7 +41,7 @@ class SicboApiController extends BaseController
      * API身份验证
      * 路由: POST /api/sicbo/auth
      */
-    public function authenticate(): Response
+    public function authenticate()
     {
         $params = $this->request->only(['api_key', 'secret', 'timestamp', 'signature']);
         
@@ -93,7 +93,7 @@ class SicboApiController extends BaseController
      * 获取台桌列表API
      * 路由: GET /api/sicbo/tables
      */
-    public function apiGetTables(): Response
+    public function apiGetTables()
     {
         // API认证中间件应该已经验证了token
         $authInfo = $this->getAuthInfo();
@@ -153,7 +153,7 @@ class SicboApiController extends BaseController
      * 获取游戏状态API
      * 路由: GET /api/sicbo/game-status/{table_id}
      */
-    public function apiGetGameStatus(): Response
+    public function apiGetGameStatus()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -213,7 +213,7 @@ class SicboApiController extends BaseController
      * API投注接口
      * 路由: POST /api/sicbo/bet
      */
-    public function apiBet(): Response
+    public function apiBet()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -348,7 +348,7 @@ class SicboApiController extends BaseController
      * 查询投注结果API
      * 路由: GET /api/sicbo/bet-result/{game_number}
      */
-    public function apiGetBetResult(): Response
+    public function apiGetBetResult()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -430,7 +430,7 @@ class SicboApiController extends BaseController
      * 获取用户余额API
      * 路由: GET /api/sicbo/balance
      */
-    public function apiGetBalance(): Response
+    public function apiGetBalance()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -481,7 +481,7 @@ class SicboApiController extends BaseController
      * 获取开奖历史API
      * 路由: GET /api/sicbo/results
      */
-    public function apiGetResults(): Response
+    public function apiGetResults()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -548,7 +548,7 @@ class SicboApiController extends BaseController
      * 获取赔率信息API
      * 路由: GET /api/sicbo/odds/{table_id}
      */
-    public function apiGetOdds(): Response
+    public function apiGetOdds()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -595,7 +595,7 @@ class SicboApiController extends BaseController
      * 获取统计数据API
      * 路由: GET /api/sicbo/statistics/{table_id}
      */
-    public function apiGetStatistics(): Response
+    public function apiGetStatistics()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -648,7 +648,7 @@ class SicboApiController extends BaseController
      * 移动端快速投注
      * 路由: POST /api/sicbo/mobile/quick-bet
      */
-    public function mobileQuickBet(): Response
+    public function mobileQuickBet()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -687,7 +687,7 @@ class SicboApiController extends BaseController
      * 移动端游戏状态推送注册
      * 路由: POST /api/sicbo/mobile/subscribe
      */
-    public function mobileSubscribe(): Response
+    public function mobileSubscribe()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -737,7 +737,7 @@ class SicboApiController extends BaseController
      * 移动端用户偏好设置
      * 路由: PUT /api/sicbo/mobile/preferences
      */
-    public function mobileSetPreferences(): Response
+    public function mobileSetPreferences()
     {
         $authInfo = $this->getAuthInfo();
         if (!$authInfo) {
@@ -960,7 +960,7 @@ class SicboApiController extends BaseController
     /**
      * API成功响应
      */
-    private function apiSuccess(array $data = [], string $message = 'success'): Response
+    private function apiSuccess(array $data = [], string $message = 'success')
     {
         return json([
             'success' => true,
@@ -975,7 +975,7 @@ class SicboApiController extends BaseController
     /**
      * API错误响应
      */
-    private function apiError(int $code, string $message, array $data = []): Response
+    private function apiError(int $code, string $message, array $data = [])
     {
         $response = [
             'success' => false,

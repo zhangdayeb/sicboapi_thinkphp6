@@ -74,7 +74,7 @@ abstract class Dispatch
      * @access public
      * @return mixed
      */
-    public function run(): Response
+    public function run()
     {
         if ($this->rule instanceof RuleItem && $this->request->method() == 'OPTIONS' && $this->rule->isAutoOptions()) {
             $rules = $this->rule->getRouter()->getRule($this->rule->getRule());
@@ -90,7 +90,7 @@ abstract class Dispatch
         return $this->autoResponse($data);
     }
 
-    protected function autoResponse($data): Response
+    protected function autoResponse($data)
     {
         if ($data instanceof Response) {
             $response = $data;

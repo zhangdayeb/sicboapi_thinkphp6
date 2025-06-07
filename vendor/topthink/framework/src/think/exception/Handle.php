@@ -100,7 +100,7 @@ class Handle
      * @param Throwable $e
      * @return Response
      */
-    public function render($request, Throwable $e): Response
+    public function render($request, Throwable $e)
     {
         $this->isJson = $request->isJson();
         if ($e instanceof HttpResponseException) {
@@ -131,7 +131,7 @@ class Handle
      * @param HttpException $e
      * @return Response
      */
-    protected function renderHttpException(HttpException $e): Response
+    protected function renderHttpException(HttpException $e)
     {
         $status   = $e->getStatusCode();
         $template = $this->app->config->get('app.http_exception_template');
@@ -200,7 +200,7 @@ class Handle
      * @param Throwable $exception
      * @return Response
      */
-    protected function convertExceptionToResponse(Throwable $exception): Response
+    protected function convertExceptionToResponse(Throwable $exception)
     {
         if (!$this->isJson) {
             $response = Response::create($this->renderExceptionContent($exception));

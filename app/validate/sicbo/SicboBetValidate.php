@@ -4,7 +4,7 @@
 // 投注数据验证器
 // ==========================================
 
-declare(strict_types=1);
+
 
 namespace app\validate\sicbo;
 
