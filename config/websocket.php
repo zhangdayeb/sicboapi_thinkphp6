@@ -1,7 +1,7 @@
 <?php
 /**
- * 骰宝WebSocket配置 - 简化版
- * 只保留核心必要配置，删除复杂的扩展配置
+ * 骰宝WebSocket配置 - 修正版
+ * 确保配置与Worker类匹配
  */
 
 return [
@@ -9,10 +9,11 @@ return [
     // 服务器基础配置
     // ========================================
     'server' => [
-        'host' => env('WEBSOCKET_HOST', '0.0.0.0'),
-        'port' => env('WEBSOCKET_PORT', 2009),
-        'worker_count' => env('WEBSOCKET_WORKERS', 1),
-        'max_connections' => env('WEBSOCKET_MAX_CONN', 1000),
+        'host' => '0.0.0.0',
+        'port' => 2009,                        // 确保端口是2009
+        'worker_count' => 1,                   // 强制单进程
+        'max_connections' => 1000,
+        'name' => 'SicboWebSocket',
     ],
 
     // ========================================
@@ -25,6 +26,7 @@ return [
         'database' => env('REDIS_DATABASE', 0),
         'timeout' => 5,
         'prefix' => 'sicbo:',
+        'cache_expire' => 5,                   // 内存缓存过期时间
     ],
 
     // ========================================
@@ -55,7 +57,7 @@ return [
     'message' => [
         'max_length' => 8192,                  // 最大消息长度(字节)
         'rate_limit' => 60,                    // 频率限制(每分钟)
-        'auth_secret' => env('WEBSOCKET_AUTH_SECRET', 'sicbo_websocket_secret_2024'),
+        'auth_secret' => 'sicbo_websocket_secret_2024',
     ],
 
     // ========================================
