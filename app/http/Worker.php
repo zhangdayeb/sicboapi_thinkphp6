@@ -1,7 +1,5 @@
 <?php
 
-
-
 namespace app\http;
 
 use Workerman\Worker;
@@ -29,15 +27,15 @@ use think\facade\Db;
  */
 class Worker
 {
-/**
- * @var Worker|null
- */
-private static $worker = null;
+    /**
+     * @var Worker|null
+     */
+    private static $worker = null;
 
-/**
- * @var App|null  
- */
-private static $app = null;
+    /**
+     * @var App|null  
+     */
+    private static $app = null;
 
     /**
      * 连接管理
@@ -96,7 +94,8 @@ private static $app = null;
         self::$worker->onClose = [self::class, 'onClose'];
         self::$worker->onError = [self::class, 'onError'];
 
-        Log::info('骰宝WebSocket Worker启动，监听端口2009，单进程模式');
+        // 运行Worker
+        Worker::runAll();
     }
 
     /**
@@ -105,18 +104,31 @@ private static $app = null;
     private static function initThinkPHP(): void
     {
         try {
-            // 加载ThinkPHP
-            require_once __DIR__ . '/../../vendor/autoload.php';
+            // 获取正确的路径
+            $rootPath = dirname(dirname(__DIR__));
             
-            self::$app = new App();
+            // 检查autoload文件是否存在
+            $autoloadFile = $rootPath . '/vendor/autoload.php';
+            if (!file_exists($autoloadFile)) {
+                throw new \Exception("Autoload file not found: {$autoloadFile}");
+            }
+            
+            // 加载ThinkPHP
+            require_once $autoloadFile;
+            
+            // 创建应用实例
+            self::$app = new App($rootPath);
+            
+            // 初始化应用
             self::$app->initialize();
             
             // 设置运行模式
             self::$app->debug(true);
             
-            Log::info('ThinkPHP应用初始化成功');
+            echo "ThinkPHP应用初始化成功\n";
+            
         } catch (\Exception $e) {
-            Log::error('ThinkPHP应用初始化失败: ' . $e->getMessage());
+            echo "ThinkPHP应用初始化失败: " . $e->getMessage() . "\n";
             exit(1);
         }
     }
@@ -126,11 +138,11 @@ private static $app = null;
      */
     public static function onWorkerStart(Worker $worker): void
     {
-        Log::info('骰宝WebSocket Worker进程启动', [
-            'worker_id' => $worker->id,
-            'pid' => posix_getpid(),
-            'listen' => $worker->getSocketName()
-        ]);
+        echo "骰宝WebSocket Worker进程启动\n";
+        echo "Worker ID: {$worker->id}\n";
+        echo "PID: " . posix_getpid() . "\n";
+        echo "监听地址: " . $worker->getSocketName() . "\n";
+        echo "启动时间: " . date('Y-m-d H:i:s') . "\n";
 
         // 设置定时器，定期清理无效连接
         \Workerman\Lib\Timer::add(30, function() {
@@ -147,9 +159,15 @@ private static $app = null;
             self::updateOnlineStats();
         });
 
-        echo "骰宝WebSocket服务启动成功，监听端口：2009\n";
-        echo "进程ID：" . posix_getpid() . "\n";
-        echo "时间：" . date('Y-m-d H:i:s') . "\n";
+        try {
+            Log::info('骰宝WebSocket Worker进程启动', [
+                'worker_id' => $worker->id,
+                'pid' => posix_getpid(),
+                'listen' => $worker->getSocketName()
+            ]);
+        } catch (\Exception $e) {
+            echo "日志记录失败: " . $e->getMessage() . "\n";
+        }
     }
 
     /**
@@ -169,11 +187,15 @@ private static $app = null;
             'auth_status' => false
         ];
 
-        Log::info('新WebSocket连接', [
-            'connection_id' => $connectionId,
-            'remote_ip' => $connection->getRemoteIp(),
-            'remote_port' => $connection->getRemotePort()
-        ]);
+        try {
+            Log::info('新WebSocket连接', [
+                'connection_id' => $connectionId,
+                'remote_ip' => $connection->getRemoteIp(),
+                'remote_port' => $connection->getRemotePort()
+            ]);
+        } catch (\Exception $e) {
+            echo "日志记录失败: " . $e->getMessage() . "\n";
+        }
 
         // 发送欢迎消息
         self::sendToConnection($connection, [
@@ -182,6 +204,8 @@ private static $app = null;
             'connection_id' => $connectionId,
             'server_time' => time()
         ]);
+
+        echo "新连接: {$connectionId} from " . $connection->getRemoteIp() . "\n";
     }
 
     /**
@@ -201,12 +225,6 @@ private static $app = null;
 
             $messageType = $message['type'];
             
-            Log::debug('收到WebSocket消息', [
-                'connection_id' => $connectionId,
-                'type' => $messageType,
-                'data' => $message
-            ]);
-
             // 更新最后活动时间
             if (isset(self::$connections[$connectionId])) {
                 self::$connections[$connectionId]['last_ping'] = time();
@@ -244,12 +262,7 @@ private static $app = null;
             }
 
         } catch (\Exception $e) {
-            Log::error('WebSocket消息处理异常', [
-                'connection_id' => $connectionId,
-                'error' => $e->getMessage(),
-                'data' => $data
-            ]);
-            
+            echo "消息处理异常: " . $e->getMessage() . "\n";
             self::sendError($connection, '消息处理失败');
         }
     }
@@ -261,9 +274,15 @@ private static $app = null;
     {
         $connectionId = spl_object_hash($connection);
         
-        Log::info('WebSocket连接关闭', [
-            'connection_id' => $connectionId
-        ]);
+        echo "连接关闭: {$connectionId}\n";
+        
+        try {
+            Log::info('WebSocket连接关闭', [
+                'connection_id' => $connectionId
+            ]);
+        } catch (\Exception $e) {
+            // 忽略日志错误
+        }
 
         self::removeConnection($connectionId);
     }
@@ -275,11 +294,17 @@ private static $app = null;
     {
         $connectionId = spl_object_hash($connection);
         
-        Log::error('WebSocket连接错误', [
-            'connection_id' => $connectionId,
-            'code' => $code,
-            'message' => $msg
-        ]);
+        echo "连接错误: {$connectionId}, Code: {$code}, Message: {$msg}\n";
+        
+        try {
+            Log::error('WebSocket连接错误', [
+                'connection_id' => $connectionId,
+                'code' => $code,
+                'message' => $msg
+            ]);
+        } catch (\Exception $e) {
+            // 忽略日志错误
+        }
     }
 
     /**
@@ -336,13 +361,10 @@ private static $app = null;
                 'message' => '认证成功'
             ]);
 
-            Log::info('用户WebSocket认证成功', [
-                'connection_id' => $connectionId,
-                'user_id' => $userId
-            ]);
+            echo "用户认证成功: UserID {$userId}, Connection {$connectionId}\n";
 
         } catch (\Exception $e) {
-            Log::error('WebSocket认证异常: ' . $e->getMessage());
+            echo "认证异常: " . $e->getMessage() . "\n";
             self::sendError($connection, '认证处理失败');
         }
     }
@@ -355,7 +377,7 @@ private static $app = null;
         $connectionId = spl_object_hash($connection);
         
         // 检查是否已认证
-        if (!self::$connections[$connectionId]['auth_status']) {
+        if (!isset(self::$connections[$connectionId]) || !self::$connections[$connectionId]['auth_status']) {
             self::sendError($connection, '请先进行身份认证');
             return;
         }
@@ -410,14 +432,10 @@ private static $app = null;
                 'table_id' => $tableId
             ], [$connectionId]);
 
-            Log::info('用户加入台桌', [
-                'connection_id' => $connectionId,
-                'user_id' => self::$connections[$connectionId]['user_id'],
-                'table_id' => $tableId
-            ]);
+            echo "用户加入台桌: UserID " . self::$connections[$connectionId]['user_id'] . ", Table {$tableId}\n";
 
         } catch (\Exception $e) {
-            Log::error('加入台桌异常: ' . $e->getMessage());
+            echo "加入台桌异常: " . $e->getMessage() . "\n";
             self::sendError($connection, '加入台桌失败');
         }
     }
@@ -467,7 +485,7 @@ private static $app = null;
             ]);
 
         } catch (\Exception $e) {
-            Log::error('获取游戏状态异常: ' . $e->getMessage());
+            echo "获取游戏状态异常: " . $e->getMessage() . "\n";
             self::sendError($connection, '获取游戏状态失败');
         }
     }
@@ -499,7 +517,7 @@ private static $app = null;
             ], [$connectionId]);
 
         } catch (\Exception $e) {
-            Log::error('投注更新处理异常: ' . $e->getMessage());
+            echo "投注更新处理异常: " . $e->getMessage() . "\n";
         }
     }
 
@@ -523,20 +541,18 @@ private static $app = null;
         }
 
         // 更新连接信息
-        self::$connections[$connectionId]['table_id'] = null;
+        if (isset(self::$connections[$connectionId])) {
+            self::$connections[$connectionId]['table_id'] = null;
 
-        // 广播用户离开消息
-        self::broadcastToTable($tableId, [
-            'type' => 'user_left',
-            'user_id' => self::$connections[$connectionId]['user_id'],
-            'table_id' => $tableId
-        ]);
+            // 广播用户离开消息
+            self::broadcastToTable($tableId, [
+                'type' => 'user_left',
+                'user_id' => self::$connections[$connectionId]['user_id'],
+                'table_id' => $tableId
+            ]);
 
-        Log::info('用户离开台桌', [
-            'connection_id' => $connectionId,
-            'user_id' => self::$connections[$connectionId]['user_id'],
-            'table_id' => $tableId
-        ]);
+            echo "用户离开台桌: UserID " . self::$connections[$connectionId]['user_id'] . ", Table {$tableId}\n";
+        }
     }
 
     /**
@@ -584,7 +600,7 @@ private static $app = null;
             $message = json_encode($data, JSON_UNESCAPED_UNICODE);
             $connection->send($message);
         } catch (\Exception $e) {
-            Log::error('发送WebSocket消息失败: ' . $e->getMessage());
+            echo "发送消息失败: " . $e->getMessage() . "\n";
         }
     }
 
@@ -610,6 +626,7 @@ private static $app = null;
         }
 
         $message = json_encode($data, JSON_UNESCAPED_UNICODE);
+        $sentCount = 0;
         
         foreach (self::$tableConnections[$tableId] as $connectionId) {
             if (in_array($connectionId, $excludeConnections)) {
@@ -620,17 +637,14 @@ private static $app = null;
                 try {
                     $connection = self::$connections[$connectionId]['connection'];
                     $connection->send($message);
+                    $sentCount++;
                 } catch (\Exception $e) {
-                    Log::error('台桌广播发送失败: ' . $e->getMessage());
+                    echo "台桌广播发送失败: " . $e->getMessage() . "\n";
                 }
             }
         }
 
-        Log::debug('台桌广播消息', [
-            'table_id' => $tableId,
-            'message_type' => $data['type'] ?? 'unknown',
-            'connection_count' => count(self::$tableConnections[$tableId]) - count($excludeConnections)
-        ]);
+        echo "台桌广播: Table {$tableId}, Type: " . ($data['type'] ?? 'unknown') . ", 发送数: {$sentCount}\n";
     }
 
     /**
@@ -643,17 +657,21 @@ private static $app = null;
         }
 
         $message = json_encode($data, JSON_UNESCAPED_UNICODE);
+        $sentCount = 0;
         
         foreach (self::$userConnections[$userId] as $connectionId) {
             if (isset(self::$connections[$connectionId])) {
                 try {
                     $connection = self::$connections[$connectionId]['connection'];
                     $connection->send($message);
+                    $sentCount++;
                 } catch (\Exception $e) {
-                    Log::error('用户消息发送失败: ' . $e->getMessage());
+                    echo "用户消息发送失败: " . $e->getMessage() . "\n";
                 }
             }
         }
+
+        echo "用户消息: UserID {$userId}, Type: " . ($data['type'] ?? 'unknown') . ", 发送数: {$sentCount}\n";
     }
 
     /**
@@ -662,20 +680,19 @@ private static $app = null;
     public static function broadcastAll(array $data): void
     {
         $message = json_encode($data, JSON_UNESCAPED_UNICODE);
+        $sentCount = 0;
         
         foreach (self::$connections as $connectionId => $connectionData) {
             try {
                 $connection = $connectionData['connection'];
                 $connection->send($message);
+                $sentCount++;
             } catch (\Exception $e) {
-                Log::error('全平台广播发送失败: ' . $e->getMessage());
+                echo "全平台广播发送失败: " . $e->getMessage() . "\n";
             }
         }
 
-        Log::info('全平台广播消息', [
-            'message_type' => $data['type'] ?? 'unknown',
-            'connection_count' => count(self::$connections)
-        ]);
+        echo "全平台广播: Type: " . ($data['type'] ?? 'unknown') . ", 发送数: {$sentCount}\n";
     }
 
     /**
@@ -689,15 +706,19 @@ private static $app = null;
 
         foreach (self::$connections as $connectionId => $connectionData) {
             if ($now - $connectionData['last_ping'] > $timeout) {
-                $connection = $connectionData['connection'];
-                $connection->close();
+                try {
+                    $connection = $connectionData['connection'];
+                    $connection->close();
+                } catch (\Exception $e) {
+                    // 忽略关闭异常
+                }
                 self::removeConnection($connectionId);
                 $cleanedCount++;
             }
         }
 
         if ($cleanedCount > 0) {
-            Log::info('清理无效WebSocket连接', ['cleaned_count' => $cleanedCount]);
+            echo "清理无效连接: {$cleanedCount} 个\n";
         }
     }
 
@@ -712,13 +733,19 @@ private static $app = null;
             'online_count' => count(self::$connections)
         ];
 
+        $sentCount = 0;
         foreach (self::$connections as $connectionData) {
             try {
                 $connection = $connectionData['connection'];
                 self::sendToConnection($connection, $heartbeatData);
+                $sentCount++;
             } catch (\Exception $e) {
                 // 忽略发送失败的连接，会被清理程序处理
             }
+        }
+
+        if ($sentCount > 0) {
+            echo "心跳发送: {$sentCount} 个连接\n";
         }
     }
 
@@ -745,8 +772,10 @@ private static $app = null;
             
             Cache::set('table_online_stats', $tableStats, 300);
 
+            echo "在线统计更新: 总连接 {$stats['total_connections']}, 认证用户 {$stats['authenticated_users']}, 活跃台桌 {$stats['active_tables']}\n";
+
         } catch (\Exception $e) {
-            Log::error('更新在线统计失败: ' . $e->getMessage());
+            echo "更新在线统计失败: " . $e->getMessage() . "\n";
         }
     }
 
@@ -756,10 +785,7 @@ private static $app = null;
     private static function validateToken(string $token): ?array
     {
         try {
-            // 这里实现token验证逻辑
-            // 可以是JWT验证、数据库查询等
-            
-            // 示例：从缓存或数据库验证token
+            // 首先从缓存获取
             $userInfo = Cache::get('user_token_' . $token);
             
             if (!$userInfo) {
@@ -786,7 +812,7 @@ private static $app = null;
             return $userInfo;
             
         } catch (\Exception $e) {
-            Log::error('Token验证异常: ' . $e->getMessage());
+            echo "Token验证异常: " . $e->getMessage() . "\n";
             return null;
         }
     }
@@ -805,7 +831,7 @@ private static $app = null;
             return $table;
             
         } catch (\Exception $e) {
-            Log::error('获取台桌信息异常: ' . $e->getMessage());
+            echo "获取台桌信息异常: " . $e->getMessage() . "\n";
             return null;
         }
     }
@@ -834,7 +860,7 @@ private static $app = null;
             return $status;
             
         } catch (\Exception $e) {
-            Log::error('获取游戏状态异常: ' . $e->getMessage());
+            echo "获取游戏状态异常: " . $e->getMessage() . "\n";
             return [];
         }
     }
@@ -863,7 +889,7 @@ private static $app = null;
             return $bets ? $bets->toArray() : [];
             
         } catch (\Exception $e) {
-            Log::error('获取用户投注异常: ' . $e->getMessage());
+            echo "获取用户投注异常: " . $e->getMessage() . "\n";
             return [];
         }
     }
@@ -918,13 +944,14 @@ private static $app = null;
                 ]);
                 
                 // 关闭连接
-                $connection->close();
+                try {
+                    $connection->close();
+                } catch (\Exception $e) {
+                    // 忽略关闭异常
+                }
             }
         }
 
-        Log::info('强制断开用户连接', [
-            'user_id' => $userId,
-            'reason' => $reason
-        ]);
+        echo "强制断开用户连接: UserID {$userId}, 原因: {$reason}\n";
     }
 }
