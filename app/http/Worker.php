@@ -1,6 +1,6 @@
 <?php
 // ========================================
-// app/http/Worker.php - WebSocket服务入口
+// app/http/Worker.php - 优化版
 // ========================================
 namespace app\http;
 
@@ -14,17 +14,11 @@ use think\facade\Log;
 use think\facade\Config;
 
 /**
- * ThinkPHP6 + Workerman WebSocket Worker
- * 适配PHP 7.3版本的骰宝游戏WebSocket服务
+ * 骰宝WebSocket Worker - 优化版
+ * 简化代码结构，保留核心功能
  */
 class Worker
 {
-    /**
-     * WebSocket配置
-     * @var array
-     */
-    private static $config = [];
-
     /**
      * 定时器ID列表
      * @var array
@@ -38,6 +32,12 @@ class Worker
     private static $startTime = 0;
 
     /**
+     * WebSocket配置
+     * @var array
+     */
+    private static $config = [];
+
+    /**
      * Worker 启动时触发
      * @param \Workerman\Worker $worker
      */
@@ -46,26 +46,20 @@ class Worker
         self::$startTime = time();
         self::$config = Config::get('websocket', []);
         
-        $this->displayStartupInfo($worker);
+        echo "=== 骰宝WebSocket服务启动 ===\n";
+        echo "Worker ID: {$worker->id}, PID: " . getmypid() . "\n";
+        echo "监听地址: {$worker->getSocketName()}\n";
+        echo "启动时间: " . date('Y-m-d H:i:s') . "\n";
+        echo "==============================\n";
         
         try {
-            // 初始化各个管理器
-            $this->initializeManagers();
-            
-            // 初始化Redis连接
-            $this->initializeRedis();
-            
-            // 启动定时器
+            $this->initializeServices();
             $this->startTimers();
             
-            // 记录启动日志
             Log::info('骰宝WebSocket Worker启动成功', [
                 'worker_id' => $worker->id,
                 'pid' => getmypid(),
-                'listen' => $worker->getSocketName(),
-                'php_version' => PHP_VERSION,
-                'memory_limit' => ini_get('memory_limit'),
-                'max_execution_time' => ini_get('max_execution_time')
+                'listen' => $worker->getSocketName()
             ]);
             
         } catch (\Exception $e) {
@@ -82,24 +76,24 @@ class Worker
         $connectionId = spl_object_hash($connection);
         $remoteIp = $connection->getRemoteIp();
         
-        echo "[" . date('Y-m-d H:i:s') . "] 新连接: {$connectionId} from {$remoteIp}\n";
-        
         try {
-            // 检查安全配置
-            if (!$this->checkConnectionSecurity($connection)) {
+            // 基础安全检查
+            if (!$this->validateConnection($connection)) {
                 $connection->close();
                 return;
             }
             
-            // 添加连接到管理器
+            // 添加到连接管理器
             ConnectionManager::addConnection($connection);
             
             // 设置认证超时
             $this->setAuthTimeout($connection);
             
+            echo "[" . date('H:i:s') . "] 新连接: {$remoteIp}\n";
+            
         } catch (\Exception $e) {
-            echo "[ERROR] 处理新连接异常: " . $e->getMessage() . "\n";
-            Log::error('处理新连接异常', [
+            echo "[ERROR] 连接处理失败: " . $e->getMessage() . "\n";
+            Log::error('新连接处理异常', [
                 'connection_id' => $connectionId,
                 'remote_ip' => $remoteIp,
                 'error' => $e->getMessage()
@@ -115,31 +109,27 @@ class Worker
      */
     public function onMessage(TcpConnection $connection, $data)
     {
-        $connectionId = spl_object_hash($connection);
-        
         try {
-            // 记录调试信息
+            // 调试日志（可配置）
             if (self::$config['debug']['log_messages'] ?? false) {
-                echo "[" . date('Y-m-d H:i:s') . "] 收到消息: {$connectionId} -> " . substr($data, 0, 100) . "\n";
+                $preview = substr($data, 0, 100);
+                echo "[" . date('H:i:s') . "] 消息: {$preview}...\n";
             }
             
             // 更新连接活动时间
-            ConnectionManager::updatePing($connectionId);
+            ConnectionManager::updatePing(spl_object_hash($connection));
             
-            // 交给消息处理器处理
+            // 交给消息处理器
             MessageHandler::handle($connection, $data);
             
         } catch (\Exception $e) {
             echo "[ERROR] 消息处理异常: " . $e->getMessage() . "\n";
             Log::error('消息处理异常', [
-                'connection_id' => $connectionId,
-                'data' => substr($data, 0, 500),
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
+                'connection_id' => spl_object_hash($connection),
+                'data_preview' => substr($data, 0, 200),
+                'error' => $e->getMessage()
             ]);
             
-            // 发送错误响应
             MessageHandler::sendError($connection, '消息处理失败');
         }
     }
@@ -151,15 +141,14 @@ class Worker
     public function onClose(TcpConnection $connection)
     {
         $connectionId = spl_object_hash($connection);
-        echo "[" . date('Y-m-d H:i:s') . "] 连接关闭: {$connectionId}\n";
         
         try {
-            // 从管理器中移除连接
             ConnectionManager::removeConnection($connection);
+            echo "[" . date('H:i:s') . "] 连接关闭: " . $connection->getRemoteIp() . "\n";
             
         } catch (\Exception $e) {
-            echo "[ERROR] 处理连接关闭异常: " . $e->getMessage() . "\n";
-            Log::error('处理连接关闭异常', [
+            echo "[ERROR] 连接关闭处理异常: " . $e->getMessage() . "\n";
+            Log::error('连接关闭异常', [
                 'connection_id' => $connectionId,
                 'error' => $e->getMessage()
             ]);
@@ -175,7 +164,8 @@ class Worker
     public function onError(TcpConnection $connection, $code, $msg)
     {
         $connectionId = spl_object_hash($connection);
-        echo "[ERROR] 连接错误: {$connectionId}, Code: {$code}, Message: {$msg}\n";
+        
+        echo "[ERROR] 连接错误: Code {$code}, Message: {$msg}\n";
         
         Log::error('WebSocket连接错误', [
             'connection_id' => $connectionId,
@@ -198,71 +188,50 @@ class Worker
      */
     public function onWorkerStop($worker)
     {
-        echo "=== 骰宝 WebSocket 服务停止 ===\n";
-        echo "Worker ID: " . $worker->id . "\n";
+        $uptime = time() - self::$startTime;
+        
+        echo "=== 骰宝WebSocket服务停止 ===\n";
+        echo "Worker ID: {$worker->id}\n";
+        echo "运行时长: " . $this->formatDuration($uptime) . "\n";
         echo "停止时间: " . date('Y-m-d H:i:s') . "\n";
-        echo "运行时长: " . $this->formatUptime(time() - self::$startTime) . "\n";
-        echo "===============================\n";
+        echo "============================\n";
         
         // 清理定时器
         foreach (self::$timers as $timerId) {
             Timer::del($timerId);
         }
         
+        // 关闭Redis连接
+        RedisGameManager::close();
+        
         Log::info('骰宝WebSocket Worker停止', [
             'worker_id' => $worker->id,
-            'uptime' => time() - self::$startTime
+            'uptime' => $uptime
         ]);
     }
 
-    /**
-     * 显示启动信息
-     * @param \Workerman\Worker $worker
-     */
-    private function displayStartupInfo($worker)
-    {
-        echo "=== 骰宝 WebSocket 服务启动 ===\n";
-        echo "Worker ID: " . $worker->id . "\n";
-        echo "PID: " . getmypid() . "\n";
-        echo "监听地址: " . $worker->getSocketName() . "\n";
-        echo "启动时间: " . date('Y-m-d H:i:s') . "\n";
-        echo "PHP版本: " . PHP_VERSION . "\n";
-        echo "ThinkPHP版本: 6.x\n";
-        echo "Workerman版本: " . \Workerman\Worker::VERSION . "\n";
-        echo "内存限制: " . ini_get('memory_limit') . "\n";
-        echo "===============================\n";
-    }
+    // ========================================
+    // 私有方法 - 简化版
+    // ========================================
 
     /**
-     * 初始化各个管理器
+     * 初始化服务
      */
-    private function initializeManagers()
+    private function initializeServices()
     {
         // 初始化连接管理器
         ConnectionManager::init();
         
-        // 初始化Redis游戏管理器
-        RedisGameManager::init(self::$config['redis'] ?? []);
+        // 初始化Redis
+        $redisConfig = self::$config['redis'] ?? [];
+        RedisGameManager::init($redisConfig);
         
-        echo "管理器初始化完成\n";
-    }
-
-    /**
-     * 初始化Redis连接
-     */
-    private function initializeRedis()
-    {
-        try {
-            $redisConfig = self::$config['redis'] ?? [];
-            
-            // 测试Redis连接
-            RedisGameManager::testConnection();
-            
-            echo "Redis连接初始化完成\n";
-            
-        } catch (\Exception $e) {
-            throw new \Exception("Redis初始化失败: " . $e->getMessage());
+        // 测试Redis连接
+        if (!RedisGameManager::testConnection()) {
+            throw new \Exception('Redis连接测试失败');
         }
+        
+        echo "服务初始化完成\n";
     }
 
     /**
@@ -273,63 +242,49 @@ class Worker
         $gameConfig = self::$config['game'] ?? [];
         $connectionConfig = self::$config['connection'] ?? [];
         
-        // 1. 游戏状态检查定时器（每秒执行）
-        $gameTimerId = Timer::add(
+        // 游戏状态检查定时器
+        self::$timers['game'] = Timer::add(
             $gameConfig['status_check_interval'] ?? 1,
             [GameTimer::class, 'checkGameStatus']
         );
-        self::$timers['game_timer'] = $gameTimerId;
         
-        // 2. 连接清理定时器（每30秒执行）
-        $cleanupTimerId = Timer::add(
+        // 连接清理定时器
+        self::$timers['cleanup'] = Timer::add(
             $connectionConfig['cleanup_interval'] ?? 30,
             [ConnectionManager::class, 'cleanup']
         );
-        self::$timers['cleanup_timer'] = $cleanupTimerId;
         
-        // 3. 心跳发送定时器（每25秒执行）
-        $heartbeatTimerId = Timer::add(
+        // 心跳定时器
+        self::$timers['heartbeat'] = Timer::add(
             ($connectionConfig['heartbeat_interval'] ?? 30) - 5,
             [ConnectionManager::class, 'sendHeartbeat']
         );
-        self::$timers['heartbeat_timer'] = $heartbeatTimerId;
         
-        // 4. 状态统计定时器（每60秒执行）
-        if (self::$config['monitor']['enable_stats'] ?? false) {
-            $statsTimerId = Timer::add(
-                self::$config['monitor']['stats_interval'] ?? 60,
-                [$this, 'logStats']
+        // 统计定时器（可选）
+        if (self::$config['debug']['enable_stats'] ?? false) {
+            self::$timers['stats'] = Timer::add(
+                self::$config['debug']['stats_interval'] ?? 60,
+                [$this, 'outputStats']
             );
-            self::$timers['stats_timer'] = $statsTimerId;
         }
         
         echo "定时器启动完成 (" . count(self::$timers) . "个)\n";
     }
 
     /**
-     * 检查连接安全性
+     * 验证连接（简化版安全检查）
      * @param TcpConnection $connection
      * @return bool
      */
-    private function checkConnectionSecurity(TcpConnection $connection)
+    private function validateConnection(TcpConnection $connection)
     {
-        $securityConfig = self::$config['security'] ?? [];
+        // 简单的连接验证
+        $maxConnections = self::$config['server']['max_connections'] ?? 1000;
+        $currentConnections = ConnectionManager::getOnlineStats()['total_connections'] ?? 0;
         
-        // 检查Origin（如果启用）
-        if ($securityConfig['origin_check'] ?? false) {
-            $origin = $connection->headers['origin'] ?? '';
-            $allowedOrigins = $securityConfig['allowed_origins'] ?? [];
-            
-            if (!empty($allowedOrigins) && !in_array($origin, $allowedOrigins)) {
-                echo "拒绝连接：Origin不在白名单 - " . $origin . "\n";
-                return false;
-            }
-        }
-        
-        // 检查频率限制（如果启用）
-        if ($securityConfig['rate_limit']['enable'] ?? false) {
-            // 这里可以实现简单的IP频率限制
-            // 暂时返回true，实际项目中可以加入Redis计数器
+        if ($currentConnections >= $maxConnections) {
+            echo "拒绝连接：已达到最大连接数限制\n";
+            return false;
         }
         
         return true;
@@ -341,7 +296,7 @@ class Worker
      */
     private function setAuthTimeout(TcpConnection $connection)
     {
-        $authTimeout = self::$config['auth']['auth_timeout'] ?? 10;
+        $authTimeout = self::$config['connection']['auth_timeout'] ?? 60;
         
         Timer::add($authTimeout, function() use ($connection) {
             $connectionId = spl_object_hash($connection);
@@ -349,7 +304,7 @@ class Worker
             
             // 如果连接还存在且未认证，则关闭连接
             if ($connectionData && !$connectionData['auth_status']) {
-                echo "连接认证超时，关闭连接: {$connectionId}\n";
+                echo "连接认证超时: " . $connection->getRemoteIp() . "\n";
                 MessageHandler::sendError($connection, '认证超时');
                 $connection->close();
             }
@@ -357,31 +312,21 @@ class Worker
     }
 
     /**
-     * 记录统计信息
+     * 输出统计信息
      */
-    public function logStats()
+    public function outputStats()
     {
         try {
             $stats = ConnectionManager::getOnlineStats();
-            $memoryUsage = memory_get_usage(true);
-            $memoryPeak = memory_get_peak_usage(true);
+            $memory = $this->formatBytes(memory_get_usage(true));
             
             echo "[统计] 连接数: {$stats['total_connections']}, " .
                  "认证用户: {$stats['authenticated_users']}, " .
                  "活跃台桌: {$stats['active_tables']}, " .
-                 "内存: " . $this->formatBytes($memoryUsage) . "\n";
-            
-            Log::info('WebSocket服务统计', [
-                'connections' => $stats['total_connections'],
-                'users' => $stats['authenticated_users'],
-                'tables' => $stats['active_tables'],
-                'memory_usage' => $memoryUsage,
-                'memory_peak' => $memoryPeak,
-                'uptime' => time() - self::$startTime
-            ]);
+                 "内存: {$memory}\n";
             
         } catch (\Exception $e) {
-            echo "[ERROR] 统计记录失败: " . $e->getMessage() . "\n";
+            echo "[ERROR] 统计输出失败: " . $e->getMessage() . "\n";
         }
     }
 
@@ -391,18 +336,15 @@ class Worker
      */
     private function handleStartupError(\Exception $e)
     {
-        echo "[FATAL ERROR] Worker启动失败: " . $e->getMessage() . "\n";
-        echo "文件: " . $e->getFile() . "\n";
-        echo "行号: " . $e->getLine() . "\n";
+        echo "[FATAL] Worker启动失败: " . $e->getMessage() . "\n";
+        echo "文件: " . $e->getFile() . ":" . $e->getLine() . "\n";
         
         Log::error('WebSocket Worker启动失败', [
             'error' => $e->getMessage(),
             'file' => $e->getFile(),
-            'line' => $e->getLine(),
-            'trace' => $e->getTraceAsString()
+            'line' => $e->getLine()
         ]);
         
-        // 退出进程
         exit(1);
     }
 
@@ -424,17 +366,22 @@ class Worker
     }
 
     /**
-     * 格式化运行时间
+     * 格式化时长
      * @param int $seconds
      * @return string
      */
-    private function formatUptime($seconds)
+    private function formatDuration($seconds)
     {
-        $days = floor($seconds / 86400);
-        $hours = floor(($seconds % 86400) / 3600);
-        $minutes = floor(($seconds % 3600) / 60);
-        $secs = $seconds % 60;
-        
-        return "{$days}天 {$hours}小时 {$minutes}分钟 {$secs}秒";
+        if ($seconds < 60) {
+            return "{$seconds}秒";
+        } elseif ($seconds < 3600) {
+            $minutes = floor($seconds / 60);
+            $secs = $seconds % 60;
+            return "{$minutes}分{$secs}秒";
+        } else {
+            $hours = floor($seconds / 3600);
+            $minutes = floor(($seconds % 3600) / 60);
+            return "{$hours}小时{$minutes}分钟";
+        }
     }
 }
