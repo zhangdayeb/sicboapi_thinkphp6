@@ -60,55 +60,6 @@ class SicboBetController extends BaseController
         }
     }
 
-    /**
-     * 修改当前投注 - 修复版
-     * 路由: PUT /sicbo/bet/modify
-     */
-    public function modifyBet()
-    {
-        try {
-            $params = $this->request->only(['table_id', 'game_number', 'bets']);
-            $userId = $this->getCurrentUserId();
-            
-            if (empty($params['table_id']) || empty($params['game_number']) || empty($params['bets'])) {
-                return json(['code' => 400, 'message' => '参数不完整']);
-            }
-
-            // 调用底部的修改处理函数
-            return $this->processBetModification($userId, $params);
-
-        } catch (\Exception $e) {
-            return json([
-                'code' => 500,
-                'message' => '修改投注失败：' . $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * 取消当前投注 - 修复版
-     * 路由: DELETE /sicbo/bet/cancel
-     */
-    public function cancelBet()
-    {
-        try {
-            $params = $this->request->only(['table_id', 'game_number']);
-            $userId = $this->getCurrentUserId();
-            
-            if (empty($params['table_id']) || empty($params['game_number'])) {
-                return json(['code' => 400, 'message' => '参数不完整']);
-            }
-
-            // 调用底部的取消处理函数
-            return $this->processBetCancellation($userId, $params);
-
-        } catch (\Exception $e) {
-            return json([
-                'code' => 500,
-                'message' => '取消投注失败：' . $e->getMessage()
-            ]);
-        }
-    }
 
     /**
      * 获取用户当前投注 - 修复版
@@ -465,52 +416,6 @@ public function getUserBalance()
         }
     }
 
-    /**
-     * 预检投注合法性 - 已修复
-     * 路由: POST /sicbo/bet/validate
-     */
-    public function validateBet()
-    {
-        try {
-            $params = $this->request->only(['table_id', 'bets']);
-            
-            if (empty($params['table_id']) || empty($params['bets'])) {
-                return json(['code' => 400, 'message' => '参数不完整']);
-            }
-
-            $bets = $params['bets'];
-            $totalAmount = 0;
-            
-            // 简单验证
-            foreach ($bets as $bet) {
-                if (isset($bet['bet_amount'])) {
-                    $totalAmount += (float)$bet['bet_amount'];
-                }
-            }
-            
-            $isValid = !empty($bets) && $totalAmount > 0;
-            
-            return json([
-                'code' => $isValid ? 200 : 400,
-                'message' => $isValid ? '投注数据验证通过' : '投注数据无效',
-                'data' => [
-                    'valid' => $isValid,
-                    'total_amount' => $totalAmount,
-                    'bet_count' => count($bets)
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            return json([
-                'code' => 500,
-                'message' => '验证投注失败：' . $e->getMessage(),
-                'debug' => [
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine()
-                ]
-            ]);
-        }
-    }
 
     /**
      * ========================================
