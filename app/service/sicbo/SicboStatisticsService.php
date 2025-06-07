@@ -130,9 +130,9 @@ class SicboStatisticsService
             $dateRange = $this->getDateRange($period);
             
             // 获取投注统计
-            $bettingStats = Db::table('ntp_sicbo_bet_records')
+            $bettingStats = Db::table('sicbo_bet_records')
                 ->alias('br')
-                ->join('ntp_sicbo_game_results gr', 'br.game_number = gr.game_number')
+                ->join('sicbo_game_results gr', 'br.game_number = gr.game_number')
                 ->where('br.table_id', $tableId)
                 ->where('br.bet_time', '>=', $dateRange['start'])
                 ->where('br.bet_time', '<=', $dateRange['end'])
@@ -183,7 +183,7 @@ class SicboStatisticsService
             }
 
             // 获取参与玩家数
-            $totalStats['total_players'] = Db::table('ntp_sicbo_bet_records')
+            $totalStats['total_players'] = Db::table('sicbo_bet_records')
                 ->where('table_id', $tableId)
                 ->where('bet_time', '>=', $dateRange['start'])
                 ->where('bet_time', '<=', $dateRange['end'])
@@ -213,7 +213,7 @@ class SicboStatisticsService
         return Cache::remember($cacheKey, function () use ($tableId, $period) {
             $dateRange = $this->getDateRange($period);
             
-            $query = Db::table('ntp_sicbo_bet_records')
+            $query = Db::table('sicbo_bet_records')
                 ->where('bet_time', '>=', $dateRange['start'])
                 ->where('bet_time', '<=', $dateRange['end']);
                 
@@ -977,7 +977,7 @@ class SicboStatisticsService
      */
     private function calculateBetStatsForPeriod(int $tableId, array $dateRange): array
     {
-        $betStats = Db::table('ntp_sicbo_bet_records')
+        $betStats = Db::table('sicbo_bet_records')
             ->where('table_id', $tableId)
             ->where('bet_time', '>=', $dateRange['start'])
             ->where('bet_time', '<=', $dateRange['end'])

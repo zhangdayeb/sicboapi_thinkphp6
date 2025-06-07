@@ -797,7 +797,7 @@ private static $app = null;
     private static function getTableInfo(int $tableId): ?array
     {
         try {
-            $table = Db::table('ntp_dianji_table')
+            $table = Db::table('dianji_table')
                 ->where('id', $tableId)
                 ->where('status', 1)
                 ->find();
@@ -853,7 +853,7 @@ private static $app = null;
                 return [];
             }
             
-            $bets = Db::table('ntp_sicbo_bet_records')
+            $bets = Db::table('sicbo_bet_records')
                 ->where('user_id', $userId)
                 ->where('table_id', $tableId)
                 ->where('game_number', $gameNumber)

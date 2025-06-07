@@ -603,7 +603,7 @@ class SicboStatisticsJob
      */
     private function calculateBetStatsForPeriod(int $tableId, array $dateRange): array
     {
-        $betStats = Db::table('ntp_sicbo_bet_records')
+        $betStats = Db::table('sicbo_bet_records')
             ->where('table_id', $tableId)
             ->where('bet_time', '>=', $dateRange['start'])
             ->where('bet_time', '<=', $dateRange['end'])

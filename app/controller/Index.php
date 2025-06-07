@@ -149,11 +149,11 @@ class Index
 
             // 测试骰宝相关表是否存在
             $tables = [
-                'ntp_sicbo_game_results' => '游戏结果表',
-                'ntp_sicbo_bet_records' => '投注记录表', 
-                'ntp_sicbo_odds' => '赔率配置表',
-                'ntp_sicbo_statistics' => '统计数据表',
-                'ntp_dianji_table' => '台桌表'
+                'sicbo_game_results' => '游戏结果表',
+                'sicbo_bet_records' => '投注记录表', 
+                'sicbo_odds' => '赔率配置表',
+                'sicbo_statistics' => '统计数据表',
+                'dianji_table' => '台桌表'
             ];
 
             foreach ($tables as $table => $desc) {
@@ -817,7 +817,7 @@ class Index
     private function checkTables()
     {
         try {
-            $tables = ['ntp_sicbo_game_results', 'ntp_sicbo_bet_records', 'ntp_sicbo_odds'];
+            $tables = ['sicbo_game_results', 'sicbo_bet_records', 'sicbo_odds'];
             foreach ($tables as $table) {
                 Db::query("SELECT 1 FROM {$table} LIMIT 1");
             }

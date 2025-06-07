@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{$page_title|default='骰宝系统综合测试'}</title>
+    <title>🎲 骰宝系统连通性测试器</title>
     <style>
         * {
             margin: 0;
@@ -19,7 +19,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
             border-radius: 15px;
@@ -35,68 +35,279 @@
         }
 
         .header h1 {
-            font-size: 2.5em;
+            font-size: 2.2em;
             margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
 
-        .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
-
-        .test-controls {
+        .controls {
             padding: 20px 30px;
             background: #f8f9fa;
             border-bottom: 1px solid #e9ecef;
-        }
-
-        .btn-group {
             display: flex;
             gap: 15px;
             flex-wrap: wrap;
+            align-items: center;
         }
 
         .btn {
-            padding: 12px 24px;
+            padding: 10px 20px;
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 14px;
             font-weight: 600;
             transition: all 0.3s ease;
-            text-decoration: none;
-            display: inline-block;
-            text-align: center;
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #007bff;
             color: white;
         }
 
         .btn-success {
-            background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+            background: #28a745;
             color: white;
         }
 
         .btn-warning {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
+            background: #ffc107;
+            color: #212529;
         }
 
         .btn-danger {
-            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
-            color: #333;
+            background: #dc3545;
+            color: white;
         }
 
         .btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .progress-container {
+            margin: 0 20px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            width: 0%;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+            font-weight: bold;
+            color: #495057;
+            z-index: 2;
         }
 
         .test-content {
             padding: 30px;
+        }
+
+        .test-groups {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 25px;
+        }
+
+        .test-group {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .group-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            font-weight: 600;
+            font-size: 1.1em;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .group-status {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #6c757d;
+        }
+
+        .group-status.testing {
+            background: #ffc107;
+            animation: pulse 1s infinite;
+        }
+
+        .group-status.success {
+            background: #28a745;
+        }
+
+        .group-status.error {
+            background: #dc3545;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .test-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .test-item {
+            padding: 12px 20px;
+            border-bottom: 1px solid #f1f3f4;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .test-item:last-child {
+            border-bottom: none;
+        }
+
+        .test-url {
+            flex: 1;
+            font-family: 'Courier New', monospace;
+            color: #495057;
+            word-break: break-all;
+            margin-right: 10px;
+        }
+
+        .test-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 100px;
+            justify-content: flex-end;
+        }
+
+        .status-badge {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .status-waiting {
+            background: #e9ecef;
+            color: #6c757d;
+        }
+
+        .status-testing {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .response-time {
+            font-size: 10px;
+            color: #6c757d;
+        }
+
+        .summary {
+            background: #f8f9fa;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .summary.show {
+            display: block;
+        }
+
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            text-align: center;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
+        .error-details {
+            margin-top: 20px;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 15px;
+            display: none;
+        }
+
+        .error-details.show {
+            display: block;
+        }
+
+        .error-item {
+            margin-bottom: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .error-url {
+            font-weight: bold;
+            color: #721c24;
+            font-family: monospace;
+        }
+
+        .error-message {
+            color: #721c24;
+            margin-top: 5px;
         }
 
         .loading {
@@ -106,10 +317,10 @@
         }
 
         .spinner {
-            width: 50px;
-            height: 50px;
+            width: 40px;
+            height: 40px;
             border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border-top: 4px solid #007bff;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin: 0 auto 20px;
@@ -119,583 +330,429 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-
-        .test-results {
-            display: none;
-        }
-
-        .summary-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 25px;
-            border-radius: 12px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
-        }
-
-        .summary-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .stat-item {
-            text-align: center;
-            background: rgba(255,255,255,0.1);
-            padding: 15px;
-            border-radius: 8px;
-        }
-
-        .stat-number {
-            font-size: 2em;
-            font-weight: bold;
-            display: block;
-        }
-
-        .stat-label {
-            font-size: 0.9em;
-            opacity: 0.8;
-            margin-top: 5px;
-        }
-
-        .modules-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 25px;
-        }
-
-        .module-card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-            overflow: hidden;
-            border: 1px solid #e9ecef;
-        }
-
-        .module-header {
-            padding: 20px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e9ecef;
-            font-weight: 600;
-            font-size: 1.1em;
-        }
-
-        .module-content {
-            padding: 20px;
-        }
-
-        .test-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #f1f3f4;
-        }
-
-        .test-item:last-child {
-            border-bottom: none;
-        }
-
-        .test-name {
-            flex: 1;
-            font-size: 14px;
-        }
-
-        .test-status {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-left: 10px;
-        }
-
-        .status-passed {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .status-failed {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        .test-duration {
-            font-size: 11px;
-            color: #6c757d;
-            margin-left: 8px;
-        }
-
-        .error-message {
-            font-size: 12px;
-            color: #dc3545;
-            margin-top: 5px;
-            font-style: italic;
-        }
-
-        .system-info {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 30px;
-            font-size: 14px;
-        }
-
-        .system-info h3 {
-            margin-bottom: 15px;
-            color: #495057;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-        }
-
-        .alert {
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .alert-danger {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 20px;
-            background: #e9ecef;
-            border-radius: 10px;
-            overflow: hidden;
-            margin: 15px 0;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #56ab2f 0%, #a8e6cf 100%);
-            transition: width 0.3s ease;
-        }
-
-        @media (max-width: 768px) {
-            .modules-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .btn-group {
-                flex-direction: column;
-            }
-            
-            .summary-stats {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎲 {$page_title|default='骰宝系统综合测试'}</h1>
-            <p>全面测试骰宝游戏系统的各个功能模块</p>
+            <h1>🎲 骰宝系统连通性测试器</h1>
+            <p>自动测试所有API接口的连通性和响应状态</p>
         </div>
 
-        <div class="test-controls">
-            <div class="btn-group">
-                <button class="btn btn-primary" onclick="runFullTest()">
-                    🔍 执行完整测试
-                </button>
-                <button class="btn btn-success" onclick="runHealthCheck()">
-                    ❤️ 快速健康检查
-                </button>
-                <button class="btn btn-warning" onclick="showTestModules()">
-                    📋 查看测试模块
-                </button>
-                <button class="btn btn-danger" onclick="cleanupTestData()">
-                    🧹 清理测试数据
-                </button>
+        <div class="controls">
+            <button class="btn btn-primary" onclick="startConnectivityTest()">
+                🔍 开始连通性测试
+            </button>
+            <button class="btn btn-success" onclick="testBasicEndpoints()">
+                ❤️ 基础接口测试
+            </button>
+            <button class="btn btn-warning" onclick="testGameEndpoints()">
+                🎮 游戏接口测试
+            </button>
+            <button class="btn btn-danger" onclick="clearResults()">
+                🧹 清除结果
+            </button>
+            
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                    <div class="progress-text" id="progressText">等待开始...</div>
+                </div>
             </div>
         </div>
 
         <div class="test-content">
-            <!-- 默认说明 -->
-            <div id="welcome-info">
-                <div class="alert alert-success">
-                    <h4>🎉 欢迎使用骰宝系统测试工具</h4>
-                    <p>这个测试工具可以帮助您全面检查骰宝游戏系统的各个功能模块，包括：</p>
-                    <ul style="margin: 15px 0; padding-left: 30px;">
-                        {volist name="test_modules" id="module"}
-                        <li><strong>{$module}</strong></li>
-                        {/volist}
-                    </ul>
-                    <p>点击上方按钮开始测试！</p>
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <h3>正在执行连通性测试...</h3>
+                <p>请稍候，正在逐一测试所有接口</p>
+            </div>
+
+            <div class="summary" id="summary">
+                <h3>📊 测试结果汇总</h3>
+                <div class="summary-stats" id="summaryStats">
+                    <!-- 动态填充 -->
                 </div>
             </div>
 
-            <!-- 加载状态 -->
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <h3>正在执行测试...</h3>
-                <p>请稍候，测试可能需要几分钟时间</p>
+            <div class="error-details" id="errorDetails">
+                <h4>❌ 失败的接口详情</h4>
+                <div id="errorList">
+                    <!-- 动态填充 -->
+                </div>
             </div>
 
-            <!-- 测试结果 -->
-            <div class="test-results" id="test-results">
-                <!-- 结果会通过JavaScript动态填充 -->
+            <div class="test-groups" id="testGroups">
+                <!-- 动态填充 -->
             </div>
         </div>
     </div>
 
     <script>
-        // 执行完整测试
-        async function runFullTest() {
-            showLoading();
-            
-            try {
-                // 尝试多个可能的路径
-                let response;
-                const urls = [
-                    '/test/sicbo/full',
-                    '/index/testSicboSystemFull'
-                ];
-                
-                for (const url of urls) {
-                    try {
-                        response = await fetch(url);
-                        if (response.ok) {
-                            break;
-                        }
-                    } catch (e) {
-                        continue;
-                    }
-                }
-                
-                if (!response || !response.ok) {
-                    throw new Error('无法访问测试接口');
-                }
-                
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    throw new Error('服务器返回了非JSON格式的响应，可能是PHP错误');
-                }
-                
-                const data = await response.json();
-                displayTestResults(data);
-            } catch (error) {
-                displayError('测试执行失败: ' + error.message);
+        // 测试URL配置
+        const testConfig = {
+            basic: {
+                name: "🏠 系统基础接口",
+                urls: [
+                    { url: "/", name: "首页" },
+                    { url: "/health", name: "健康检查" },
+                    { url: "/info", name: "系统信息" },
+                    { url: "/debug", name: "调试信息" },
+                    { url: "/debug/health", name: "调试健康检查" },
+                    { url: "/debug/test", name: "调试测试" }
+                ]
+            },
+            test: {
+                name: "🧪 测试页面接口",
+                urls: [
+                    { url: "/test", name: "测试首页" },
+                    { url: "/test/health", name: "快速健康检查" },
+                    { url: "/test/sicbo/full", name: "完整系统测试" },
+                    { url: "/test/cleanup", name: "清理测试数据", method: "POST" }
+                ]
+            },
+            game: {
+                name: "🎮 骰宝游戏接口",
+                urls: [
+                    { url: "/sicbo/game/table-info?table_id=1", name: "台桌信息" },
+                    { url: "/sicbo/game/history?table_id=1&limit=10", name: "游戏历史" },
+                    { url: "/sicbo/game/statistics?table_id=1&type=daily", name: "游戏统计" },
+                    { url: "/sicbo/game/odds", name: "赔率信息" },
+                    { url: "/sicbo/game/bet-stats?table_id=1&game_number=TEST", name: "投注统计" }
+                ]
+            },
+            bet: {
+                name: "💰 投注系统接口",
+                urls: [
+                    { url: "/sicbo/bet/balance", name: "用户余额", headers: {"X-User-ID": "1"} },
+                    { url: "/sicbo/bet/limits?table_id=1", name: "投注限额" },
+                    { url: "/sicbo/bet/current?table_id=1&game_number=TEST", name: "当前投注", headers: {"X-User-ID": "1"} },
+                    { url: "/sicbo/bet/history?page=1&limit=10", name: "投注历史", headers: {"X-User-ID": "1"} }
+                ]
+            },
+            admin: {
+                name: "🔧 管理后台接口",
+                urls: [
+                    { url: "/sicbo/admin/tables", name: "台桌列表" },
+                    { url: "/sicbo/admin/config/odds", name: "赔率配置" },
+                    { url: "/sicbo/admin/config/system", name: "系统配置" },
+                    { url: "/sicbo/admin/monitor/realtime?table_id=1", name: "实时监控" }
+                ]
+            },
+            api: {
+                name: "🌐 外部API接口",
+                urls: [
+                    { url: "/api/sicbo/tables", name: "API台桌列表", headers: {"Authorization": "Bearer test_token"} },
+                    { url: "/api/sicbo/game-status/1", name: "API游戏状态", headers: {"Authorization": "Bearer test_token"} },
+                    { url: "/api/sicbo/results?table_id=1&limit=10", name: "API开奖历史", headers: {"Authorization": "Bearer test_token"} },
+                    { url: "/api/sicbo/odds/1", name: "API赔率信息", headers: {"Authorization": "Bearer test_token"} }
+                ]
             }
+        };
+
+        let testResults = {};
+        let currentTestIndex = 0;
+        let totalTests = 0;
+
+        // 初始化页面
+        function initializePage() {
+            createTestGroups();
+            calculateTotalTests();
         }
 
-        // 执行健康检查
-        async function runHealthCheck() {
-            showLoading();
-            
-            try {
-                // 尝试多个可能的路径
-                let response;
-                const urls = [
-                    '/test/health',
-                    '/health', 
-                    '/index/quickHealthCheck'
-                ];
-                
-                for (const url of urls) {
-                    try {
-                        response = await fetch(url);
-                        if (response.ok) {
-                            break;
-                        }
-                    } catch (e) {
-                        continue;
-                    }
-                }
-                
-                if (!response || !response.ok) {
-                    throw new Error('无法访问健康检查接口');
-                }
-                
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    throw new Error('服务器返回了非JSON格式的响应');
-                }
-                
-                const data = await response.json();
-                displayHealthCheck(data);
-            } catch (error) {
-                displayError('健康检查失败: ' + error.message);
-            }
+        // 创建测试组
+        function createTestGroups() {
+            const container = document.getElementById('testGroups');
+            container.innerHTML = '';
+
+            Object.keys(testConfig).forEach(groupKey => {
+                const group = testConfig[groupKey];
+                const groupElement = createGroupElement(groupKey, group);
+                container.appendChild(groupElement);
+            });
         }
 
-        // 显示测试模块
-        function showTestModules() {
-            const modules = {
-                'database': '数据库连接测试',
-                'models': '数据模型测试',
-                'calculation': '游戏计算服务测试',
-                'game_flow': '游戏流程服务测试',
-                'betting': '投注服务测试',
-                'settlement': '结算服务测试',
-                'statistics': '统计服务测试',
-                'controllers': '控制器接口测试',
-                'websocket': 'WebSocket功能测试',
-                'performance': '性能压力测试'
+        // 创建组元素
+        function createGroupElement(groupKey, group) {
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'test-group';
+            groupDiv.innerHTML = `
+                <div class="group-header">
+                    <span>${group.name}</span>
+                    <div class="group-status" id="status-${groupKey}"></div>
+                </div>
+                <div class="test-list" id="list-${groupKey}">
+                    ${group.urls.map((urlConfig, index) => `
+                        <div class="test-item" id="test-${groupKey}-${index}">
+                            <div class="test-url">${urlConfig.name}: ${urlConfig.url}</div>
+                            <div class="test-status">
+                                <span class="status-badge status-waiting">等待</span>
+                                <span class="response-time"></span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            return groupDiv;
+        }
+
+        // 计算总测试数
+        function calculateTotalTests() {
+            totalTests = Object.values(testConfig).reduce((sum, group) => sum + group.urls.length, 0);
+        }
+
+        // 开始连通性测试
+        async function startConnectivityTest() {
+            resetTestState();
+            showLoading();
+            
+            currentTestIndex = 0;
+            testResults = {};
+
+            // 逐组测试
+            for (const [groupKey, group] of Object.entries(testConfig)) {
+                await testGroup(groupKey, group);
+            }
+
+            hideLoading();
+            showSummary();
+        }
+
+        // 测试单个组
+        async function testGroup(groupKey, group) {
+            const statusElement = document.getElementById(`status-${groupKey}`);
+            statusElement.className = 'group-status testing';
+
+            testResults[groupKey] = {
+                name: group.name,
+                total: group.urls.length,
+                success: 0,
+                failed: 0,
+                tests: []
             };
 
-            let html = '<div class="alert alert-success"><h4>📋 测试模块列表</h4><ul style="margin: 15px 0; padding-left: 30px;">';
-            
-            for (const [key, name] of Object.entries(modules)) {
-                html += `<li><strong>${name}</strong></li>`;
+            for (let i = 0; i < group.urls.length; i++) {
+                const urlConfig = group.urls[i];
+                const result = await testSingleUrl(groupKey, i, urlConfig);
+                testResults[groupKey].tests.push(result);
+                
+                if (result.success) {
+                    testResults[groupKey].success++;
+                } else {
+                    testResults[groupKey].failed++;
+                }
+
+                updateProgress();
             }
-            
-            html += '</ul></div>';
-            
-            document.getElementById('test-results').innerHTML = html;
-            hideLoading();
-            showResults();
+
+            // 更新组状态
+            if (testResults[groupKey].failed === 0) {
+                statusElement.className = 'group-status success';
+            } else {
+                statusElement.className = 'group-status error';
+            }
         }
 
-        // 清理测试数据
-        async function cleanupTestData() {
-            if (!confirm('确定要清理测试数据吗？')) {
-                return;
-            }
+        // 测试单个URL
+        async function testSingleUrl(groupKey, index, urlConfig) {
+            const testElement = document.getElementById(`test-${groupKey}-${index}`);
+            const statusBadge = testElement.querySelector('.status-badge');
+            const responseTime = testElement.querySelector('.response-time');
+            
+            // 更新状态为测试中
+            statusBadge.className = 'status-badge status-testing';
+            statusBadge.textContent = '测试中';
 
-            showLoading();
+            const startTime = Date.now();
             
             try {
-                // 尝试多个可能的路径
-                let response;
-                const urls = [
-                    '/test/cleanup',
-                    '/index/cleanupTestData'
-                ];
-                
-                for (const url of urls) {
-                    try {
-                        response = await fetch(url, {
-                            method: 'POST'
-                        });
-                        if (response.ok) {
-                            break;
-                        }
-                    } catch (e) {
-                        continue;
+                const options = {
+                    method: urlConfig.method || 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...urlConfig.headers
                     }
+                };
+
+                if (urlConfig.body) {
+                    options.body = JSON.stringify(urlConfig.body);
                 }
-                
-                if (!response || !response.ok) {
-                    throw new Error('无法访问清理接口');
-                }
-                
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    throw new Error('服务器返回了非JSON格式的响应');
-                }
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    displaySuccess('测试数据清理完成');
+
+                const response = await fetch(urlConfig.url, options);
+                const endTime = Date.now();
+                const duration = endTime - startTime;
+
+                const result = {
+                    url: urlConfig.url,
+                    name: urlConfig.name,
+                    success: response.ok,
+                    status: response.status,
+                    duration: duration,
+                    error: response.ok ? null : `HTTP ${response.status}`
+                };
+
+                // 更新UI
+                if (response.ok) {
+                    statusBadge.className = 'status-badge status-success';
+                    statusBadge.textContent = '成功';
                 } else {
-                    displayError('清理失败: ' + data.error);
+                    statusBadge.className = 'status-badge status-error';
+                    statusBadge.textContent = '失败';
                 }
+                
+                responseTime.textContent = `${duration}ms`;
+                
+                return result;
+
             } catch (error) {
-                displayError('清理失败: ' + error.message);
+                const endTime = Date.now();
+                const duration = endTime - startTime;
+
+                statusBadge.className = 'status-badge status-error';
+                statusBadge.textContent = '错误';
+                responseTime.textContent = `${duration}ms`;
+
+                return {
+                    url: urlConfig.url,
+                    name: urlConfig.name,
+                    success: false,
+                    status: 0,
+                    duration: duration,
+                    error: error.message
+                };
             }
+        }
+
+        // 更新进度
+        function updateProgress() {
+            currentTestIndex++;
+            const progress = (currentTestIndex / totalTests) * 100;
+            
+            document.getElementById('progressFill').style.width = `${progress}%`;
+            document.getElementById('progressText').textContent = `${currentTestIndex}/${totalTests} (${Math.round(progress)}%)`;
+        }
+
+        // 显示汇总
+        function showSummary() {
+            const summary = document.getElementById('summary');
+            const summaryStats = document.getElementById('summaryStats');
+            const errorDetails = document.getElementById('errorDetails');
+            const errorList = document.getElementById('errorList');
+
+            let totalSuccess = 0;
+            let totalFailed = 0;
+            let errors = [];
+
+            // 计算汇总统计
+            Object.values(testResults).forEach(group => {
+                totalSuccess += group.success;
+                totalFailed += group.failed;
+                
+                group.tests.forEach(test => {
+                    if (!test.success) {
+                        errors.push(test);
+                    }
+                });
+            });
+
+            const successRate = totalTests > 0 ? ((totalSuccess / totalTests) * 100).toFixed(1) : 0;
+
+            // 更新汇总统计
+            summaryStats.innerHTML = `
+                <div class="stat-item">
+                    <div class="stat-number">${totalTests}</div>
+                    <div class="stat-label">总测试数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" style="color: #28a745">${totalSuccess}</div>
+                    <div class="stat-label">成功</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" style="color: #dc3545">${totalFailed}</div>
+                    <div class="stat-label">失败</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" style="color: #007bff">${successRate}%</div>
+                    <div class="stat-label">成功率</div>
+                </div>
+            `;
+
+            // 显示错误详情
+            if (errors.length > 0) {
+                errorList.innerHTML = errors.map(error => `
+                    <div class="error-item">
+                        <div class="error-url">${error.name}: ${error.url}</div>
+                        <div class="error-message">错误: ${error.error}</div>
+                    </div>
+                `).join('');
+                errorDetails.classList.add('show');
+            } else {
+                errorDetails.classList.remove('show');
+            }
+
+            summary.classList.add('show');
+        }
+
+        // 基础接口测试
+        async function testBasicEndpoints() {
+            resetTestState();
+            await testGroup('basic', testConfig.basic);
+            await testGroup('test', testConfig.test);
+            showSummary();
+        }
+
+        // 游戏接口测试
+        async function testGameEndpoints() {
+            resetTestState();
+            await testGroup('game', testConfig.game);
+            await testGroup('bet', testConfig.bet);
+            showSummary();
+        }
+
+        // 重置测试状态
+        function resetTestState() {
+            currentTestIndex = 0;
+            testResults = {};
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('progressText').textContent = '等待开始...';
+            document.getElementById('summary').classList.remove('show');
+            document.getElementById('errorDetails').classList.remove('show');
+            
+            // 重置所有测试项状态
+            document.querySelectorAll('.status-badge').forEach(badge => {
+                badge.className = 'status-badge status-waiting';
+                badge.textContent = '等待';
+            });
+            
+            document.querySelectorAll('.response-time').forEach(time => {
+                time.textContent = '';
+            });
+            
+            document.querySelectorAll('.group-status').forEach(status => {
+                status.className = 'group-status';
+            });
+        }
+
+        // 清除结果
+        function clearResults() {
+            resetTestState();
+            hideLoading();
         }
 
         // 显示加载状态
         function showLoading() {
-            document.getElementById('welcome-info').style.display = 'none';
-            document.getElementById('test-results').style.display = 'none';
             document.getElementById('loading').style.display = 'block';
+            document.getElementById('testGroups').style.display = 'none';
         }
 
         // 隐藏加载状态
         function hideLoading() {
             document.getElementById('loading').style.display = 'none';
+            document.getElementById('testGroups').style.display = 'grid';
         }
 
-        // 显示结果
-        function showResults() {
-            document.getElementById('welcome-info').style.display = 'none';
-            document.getElementById('test-results').style.display = 'block';
-        }
-
-        // 显示测试结果
-        function displayTestResults(data) {
-            hideLoading();
-            showResults();
-            
-            const summary = data.summary;
-            const successRate = summary.success_rate;
-            
-            let html = `
-                <div class="summary-card">
-                    <h2>📊 测试结果总览</h2>
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${successRate}%"></div>
-                    </div>
-                    <div class="summary-stats">
-                        <div class="stat-item">
-                            <span class="stat-number">${summary.total_tests}</span>
-                            <span class="stat-label">总测试数</span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-number">${summary.passed_tests}</span>
-                            <span class="stat-label">通过测试</span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-number">${summary.failed_tests}</span>
-                            <span class="stat-label">失败测试</span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-number">${successRate}%</span>
-                            <span class="stat-label">成功率</span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-number">${summary.total_duration_ms}ms</span>
-                            <span class="stat-label">总耗时</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            // 添加模块测试结果
-            html += '<div class="modules-grid">';
-            
-            for (const [moduleKey, moduleData] of Object.entries(data.modules)) {
-                html += `
-                    <div class="module-card">
-                        <div class="module-header">
-                            ${moduleData.name || moduleKey}
-                        </div>
-                        <div class="module-content">
-                `;
-                
-                if (moduleData.tests) {
-                    for (const test of moduleData.tests) {
-                        const statusClass = test.passed ? 'status-passed' : 'status-failed';
-                        const statusText = test.passed ? '通过' : '失败';
-                        
-                        html += `
-                            <div class="test-item">
-                                <div class="test-name">${test.name}</div>
-                                <div>
-                                    <span class="test-status ${statusClass}">${statusText}</span>
-                                    <span class="test-duration">${test.duration_ms}ms</span>
-                                </div>
-                            </div>
-                        `;
-                        
-                        if (!test.passed && test.error) {
-                            html += `<div class="error-message">错误: ${test.error}</div>`;
-                        }
-                    }
-                } else if (moduleData.error) {
-                    html += `<div class="error-message">模块错误: ${moduleData.error}</div>`;
-                }
-                
-                html += '</div></div>';
-            }
-            
-            html += '</div>';
-
-            // 添加系统信息
-            if (data.system_info) {
-                html += `
-                    <div class="system-info">
-                        <h3>💻 系统信息</h3>
-                        <div class="info-grid">
-                            <div><strong>PHP版本:</strong> ${data.system_info.php_version}</div>
-                            <div><strong>内存使用:</strong> ${data.system_info.memory_usage}</div>
-                            <div><strong>峰值内存:</strong> ${data.system_info.peak_memory}</div>
-                            <div><strong>测试时间:</strong> ${data.timestamp}</div>
-                        </div>
-                    </div>
-                `;
-            }
-
-            document.getElementById('test-results').innerHTML = html;
-        }
-
-        // 显示健康检查结果
-        function displayHealthCheck(data) {
-            hideLoading();
-            showResults();
-            
-            const status = data.status;
-            const alertClass = status === 'healthy' ? 'alert-success' : 'alert-danger';
-            const icon = status === 'healthy' ? '✅' : '❌';
-            
-            let html = `
-                <div class="alert ${alertClass}">
-                    <h4>${icon} 系统健康状态: ${status === 'healthy' ? '正常' : '异常'}</h4>
-                </div>
-                
-                <div class="modules-grid">
-            `;
-            
-            for (const [check, result] of Object.entries(data.checks)) {
-                const statusClass = result ? 'status-passed' : 'status-failed';
-                const statusText = result ? '正常' : '异常';
-                const checkNames = {
-                    database: '数据库连接',
-                    cache: '缓存系统',
-                    tables: '数据表检查',
-                    services: '服务功能'
-                };
-                
-                html += `
-                    <div class="module-card">
-                        <div class="module-header">${checkNames[check] || check}</div>
-                        <div class="module-content">
-                            <div class="test-item">
-                                <div class="test-name">状态检查</div>
-                                <span class="test-status ${statusClass}">${statusText}</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-            
-            html += '</div>';
-            
-            document.getElementById('test-results').innerHTML = html;
-        }
-
-        // 显示成功消息
-        function displaySuccess(message) {
-            hideLoading();
-            showResults();
-            
-            document.getElementById('test-results').innerHTML = `
-                <div class="alert alert-success">
-                    <h4>✅ 操作成功</h4>
-                    <p>${message}</p>
-                </div>
-            `;
-        }
-
-        // 显示错误消息
-        function displayError(message) {
-            hideLoading();
-            showResults();
-            
-            document.getElementById('test-results').innerHTML = `
-                <div class="alert alert-danger">
-                    <h4>❌ 操作失败</h4>
-                    <p>${message}</p>
-                </div>
-            `;
-        }
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', initializePage);
     </script>
 </body>
 </html>
