@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>骰宝系统综合测试</title>
+    <title>{$page_title|default='骰宝系统综合测试'}</title>
     <style>
         * {
             margin: 0;
@@ -303,7 +303,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎲 骰宝系统综合测试</h1>
+            <h1>🎲 {$page_title|default='骰宝系统综合测试'}</h1>
             <p>全面测试骰宝游戏系统的各个功能模块</p>
         </div>
 
@@ -331,16 +331,9 @@
                     <h4>🎉 欢迎使用骰宝系统测试工具</h4>
                     <p>这个测试工具可以帮助您全面检查骰宝游戏系统的各个功能模块，包括：</p>
                     <ul style="margin: 15px 0; padding-left: 30px;">
-                        <li><strong>数据库连接测试</strong> - 检查数据库连接和表结构</li>
-                        <li><strong>数据模型测试</strong> - 验证各个数据模型的正确性</li>
-                        <li><strong>游戏计算服务</strong> - 测试骰子结果计算和中奖判断</li>
-                        <li><strong>游戏流程服务</strong> - 验证游戏开始、结束等流程</li>
-                        <li><strong>投注服务测试</strong> - 检查投注验证和处理逻辑</li>
-                        <li><strong>结算服务测试</strong> - 验证游戏结算和派彩功能</li>
-                        <li><strong>统计服务测试</strong> - 测试各种统计和分析功能</li>
-                        <li><strong>控制器接口</strong> - 检查各个控制器的可用性</li>
-                        <li><strong>WebSocket功能</strong> - 测试实时通信功能</li>
-                        <li><strong>性能压力测试</strong> - 检查系统性能表现</li>
+                        {volist name="test_modules" id="module"}
+                        <li><strong>{$module}</strong></li>
+                        {/volist}
                     </ul>
                     <p>点击上方按钮开始测试！</p>
                 </div>
