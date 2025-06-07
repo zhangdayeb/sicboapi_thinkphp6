@@ -658,6 +658,17 @@ Route::get('health', function() {
         ]
     ]);
 })->name('health_check');
+// ========================================
+// 系统自检路由
+// ========================================
+
+// 测试相关路由
+Route::group('test', function () {
+    Route::get('/', 'Index/index');
+    Route::get('sicbo/full', 'Index/testSicboSystemFull');
+    Route::get('health', 'Index/quickHealthCheck');
+    Route::post('cleanup', 'Index/cleanupTestData');
+});
 
 // ========================================
 // 错误处理路由
