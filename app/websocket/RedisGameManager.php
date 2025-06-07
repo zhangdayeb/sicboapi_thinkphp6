@@ -5,8 +5,9 @@ namespace app\websocket;
 use think\facade\Log;
 
 /**
- * Redis游戏状态管理器 - 新增
- * 负责读取Redis中的游戏状态数据，为WebSocket推送提供数据支撑
+ * Redis游戏状态管理器 - 简化版
+ * 只保留7个核心方法，专注于读取Redis中的游戏状态数据
+ * 删除执行命令、获取键列表、批量操作等复杂功能
  * 适配 PHP 7.3 + ThinkPHP6
  */
 class RedisGameManager
@@ -36,7 +37,7 @@ class RedisGameManager
     private static $connected = false;
 
     /**
-     * 数据缓存
+     * 数据缓存（简单内存缓存）
      * @var array
      */
     private static $cache = [];
@@ -48,7 +49,7 @@ class RedisGameManager
     private static $cacheExpire = 5;
 
     /**
-     * 初始化Redis连接
+     * 1. 初始化Redis连接
      * @param array $config Redis配置
      */
     public static function init(array $config = [])
@@ -72,6 +73,201 @@ class RedisGameManager
             throw $e;
         }
     }
+
+    /**
+     * 2. 获取游戏状态
+     * @param int $tableId 台桌ID
+     * @return array|null
+     */
+    public static function getGameStatus($tableId)
+    {
+        $cacheKey = "game_status_{$tableId}";
+        
+        // 检查内存缓存
+        if (self::isCacheValid($cacheKey)) {
+            return self::$cache[$cacheKey]['data'];
+        }
+
+        try {
+            self::ensureConnection();
+            
+            $redisKey = self::$prefix . "table:{$tableId}:status";
+            $data = self::$redis->get($redisKey);
+            
+            if ($data === false) {
+                self::setCache($cacheKey, null);
+                return null;
+            }
+
+            $gameStatus = json_decode($data, true);
+            if (!$gameStatus) {
+                self::setCache($cacheKey, null);
+                return null;
+            }
+
+            // 添加计算字段
+            $gameStatus = self::enrichGameStatus($gameStatus);
+            
+            self::setCache($cacheKey, $gameStatus);
+            return $gameStatus;
+
+        } catch (\Exception $e) {
+            Log::error('获取游戏状态失败', [
+                'table_id' => $tableId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * 3. 获取开奖结果
+     * @param int $tableId 台桌ID
+     * @param string $gameNumber 游戏局号
+     * @return array|null
+     */
+    public static function getGameResult($tableId, $gameNumber)
+    {
+        $cacheKey = "game_result_{$tableId}_{$gameNumber}";
+        
+        // 检查内存缓存
+        if (self::isCacheValid($cacheKey)) {
+            return self::$cache[$cacheKey]['data'];
+        }
+
+        try {
+            self::ensureConnection();
+            
+            $redisKey = self::$prefix . "table:{$tableId}:result:{$gameNumber}";
+            $data = self::$redis->get($redisKey);
+            
+            if ($data === false) {
+                self::setCache($cacheKey, null);
+                return null;
+            }
+
+            $gameResult = json_decode($data, true);
+            if (!$gameResult) {
+                self::setCache($cacheKey, null);
+                return null;
+            }
+
+            // 添加计算字段
+            $gameResult = self::enrichGameResult($gameResult);
+            
+            self::setCache($cacheKey, $gameResult);
+            return $gameResult;
+
+        } catch (\Exception $e) {
+            Log::error('获取开奖结果失败', [
+                'table_id' => $tableId,
+                'game_number' => $gameNumber,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * 4. 获取用户中奖信息
+     * @param int $userId 用户ID
+     * @param string $gameNumber 游戏局号
+     * @return array|null
+     */
+    public static function getWinInfo($userId, $gameNumber)
+    {
+        $cacheKey = "win_info_{$userId}_{$gameNumber}";
+        
+        // 检查内存缓存
+        if (self::isCacheValid($cacheKey)) {
+            return self::$cache[$cacheKey]['data'];
+        }
+
+        try {
+            self::ensureConnection();
+            
+            $redisKey = self::$prefix . "user:{$userId}:win:{$gameNumber}";
+            $data = self::$redis->get($redisKey);
+            
+            if ($data === false) {
+                self::setCache($cacheKey, null);
+                return null;
+            }
+
+            $winInfo = json_decode($data, true);
+            if (!$winInfo) {
+                self::setCache($cacheKey, null);
+                return null;
+            }
+
+            self::setCache($cacheKey, $winInfo);
+            return $winInfo;
+
+        } catch (\Exception $e) {
+            Log::error('获取中奖信息失败', [
+                'user_id' => $userId,
+                'game_number' => $gameNumber,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * 5. 测试Redis连接
+     * @return bool
+     */
+    public static function testConnection()
+    {
+        try {
+            self::ensureConnection();
+            $result = self::$redis->ping();
+            return $result === '+PONG' || $result === true;
+        } catch (\Exception $e) {
+            Log::error('Redis连接测试失败', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * 6. 清理内存缓存
+     */
+    public static function cleanupCache()
+    {
+        $currentTime = time();
+        $cleanedCount = 0;
+        
+        foreach (self::$cache as $key => $item) {
+            if (($currentTime - $item['time']) >= self::$cacheExpire) {
+                unset(self::$cache[$key]);
+                $cleanedCount++;
+            }
+        }
+        
+        if ($cleanedCount > 0) {
+            echo "[RedisGameManager] 清理缓存: 删除{$cleanedCount}个过期项\n";
+        }
+    }
+
+    /**
+     * 7. 关闭Redis连接
+     */
+    public static function close()
+    {
+        try {
+            if (self::$redis instanceof \Redis && self::$connected) {
+                self::$redis->close();
+                self::$connected = false;
+                echo "[RedisGameManager] Redis连接已关闭\n";
+            }
+        } catch (\Exception $e) {
+            Log::error('关闭Redis连接失败', ['error' => $e->getMessage()]);
+        }
+    }
+
+    // ========================================
+    // 私有辅助方法
+    // ========================================
 
     /**
      * 建立Redis连接
@@ -129,286 +325,6 @@ class RedisGameManager
         } catch (\Exception $e) {
             self::$connected = false;
             self::connect();
-        }
-    }
-
-    /**
-     * 测试Redis连接
-     * @return bool
-     */
-    public static function testConnection()
-    {
-        try {
-            self::ensureConnection();
-            $result = self::$redis->ping();
-            return $result === '+PONG' || $result === true;
-        } catch (\Exception $e) {
-            Log::error('Redis连接测试失败', ['error' => $e->getMessage()]);
-            return false;
-        }
-    }
-
-    /**
-     * 获取游戏状态
-     * @param int $tableId 台桌ID
-     * @return array|null
-     */
-    public static function getGameStatus($tableId)
-    {
-        $cacheKey = "game_status_{$tableId}";
-        
-        // 检查内存缓存
-        if (self::isCacheValid($cacheKey)) {
-            return self::$cache[$cacheKey]['data'];
-        }
-
-        try {
-            self::ensureConnection();
-            
-            $redisKey = self::$prefix . "table:{$tableId}:status";
-            $data = self::$redis->get($redisKey);
-            
-            if ($data === false) {
-                self::setCache($cacheKey, null);
-                return null;
-            }
-
-            $gameStatus = json_decode($data, true);
-            if (!$gameStatus) {
-                self::setCache($cacheKey, null);
-                return null;
-            }
-
-            // 添加计算字段
-            $gameStatus = self::enrichGameStatus($gameStatus);
-            
-            self::setCache($cacheKey, $gameStatus);
-            return $gameStatus;
-
-        } catch (\Exception $e) {
-            Log::error('获取游戏状态失败', [
-                'table_id' => $tableId,
-                'error' => $e->getMessage()
-            ]);
-            return null;
-        }
-    }
-
-    /**
-     * 获取开奖结果
-     * @param int $tableId 台桌ID
-     * @param string $gameNumber 游戏局号
-     * @return array|null
-     */
-    public static function getGameResult($tableId, $gameNumber)
-    {
-        $cacheKey = "game_result_{$tableId}_{$gameNumber}";
-        
-        // 检查内存缓存
-        if (self::isCacheValid($cacheKey)) {
-            return self::$cache[$cacheKey]['data'];
-        }
-
-        try {
-            self::ensureConnection();
-            
-            $redisKey = self::$prefix . "table:{$tableId}:result:{$gameNumber}";
-            $data = self::$redis->get($redisKey);
-            
-            if ($data === false) {
-                self::setCache($cacheKey, null);
-                return null;
-            }
-
-            $gameResult = json_decode($data, true);
-            if (!$gameResult) {
-                self::setCache($cacheKey, null);
-                return null;
-            }
-
-            // 添加计算字段
-            $gameResult = self::enrichGameResult($gameResult);
-            
-            self::setCache($cacheKey, $gameResult);
-            return $gameResult;
-
-        } catch (\Exception $e) {
-            Log::error('获取开奖结果失败', [
-                'table_id' => $tableId,
-                'game_number' => $gameNumber,
-                'error' => $e->getMessage()
-            ]);
-            return null;
-        }
-    }
-
-    /**
-     * 获取用户中奖信息
-     * @param int $userId 用户ID
-     * @param string $gameNumber 游戏局号
-     * @return array|null
-     */
-    public static function getWinInfo($userId, $gameNumber)
-    {
-        $cacheKey = "win_info_{$userId}_{$gameNumber}";
-        
-        // 检查内存缓存
-        if (self::isCacheValid($cacheKey)) {
-            return self::$cache[$cacheKey]['data'];
-        }
-
-        try {
-            self::ensureConnection();
-            
-            $redisKey = self::$prefix . "user:{$userId}:win:{$gameNumber}";
-            $data = self::$redis->get($redisKey);
-            
-            if ($data === false) {
-                self::setCache($cacheKey, null);
-                return null;
-            }
-
-            $winInfo = json_decode($data, true);
-            if (!$winInfo) {
-                self::setCache($cacheKey, null);
-                return null;
-            }
-
-            self::setCache($cacheKey, $winInfo);
-            return $winInfo;
-
-        } catch (\Exception $e) {
-            Log::error('获取中奖信息失败', [
-                'user_id' => $userId,
-                'game_number' => $gameNumber,
-                'error' => $e->getMessage()
-            ]);
-            return null;
-        }
-    }
-
-    /**
-     * 获取台桌最新的几局游戏结果
-     * @param int $tableId 台桌ID
-     * @param int $limit 数量限制
-     * @return array
-     */
-    public static function getRecentResults($tableId, $limit = 10)
-    {
-        try {
-            self::ensureConnection();
-            
-            $pattern = self::$prefix . "table:{$tableId}:result:*";
-            $keys = self::$redis->keys($pattern);
-            
-            if (empty($keys)) {
-                return [];
-            }
-
-            // 按键名排序（包含时间信息）
-            rsort($keys);
-            
-            // 限制数量
-            $keys = array_slice($keys, 0, $limit);
-            
-            $results = [];
-            foreach ($keys as $key) {
-                $data = self::$redis->get($key);
-                if ($data !== false) {
-                    $result = json_decode($data, true);
-                    if ($result) {
-                        $results[] = self::enrichGameResult($result);
-                    }
-                }
-            }
-
-            return $results;
-
-        } catch (\Exception $e) {
-            Log::error('获取最近游戏结果失败', [
-                'table_id' => $tableId,
-                'limit' => $limit,
-                'error' => $e->getMessage()
-            ]);
-            return [];
-        }
-    }
-
-    /**
-     * 检查游戏状态是否发生变化
-     * @param int $tableId 台桌ID
-     * @param string $lastCheckTime 上次检查时间戳
-     * @return bool
-     */
-    public static function hasGameStatusChanged($tableId, $lastCheckTime = '0')
-    {
-        try {
-            $currentStatus = self::getGameStatus($tableId);
-            if (!$currentStatus) {
-                return false;
-            }
-
-            $statusUpdateTime = $currentStatus['update_time'] ?? 0;
-            return $statusUpdateTime > $lastCheckTime;
-
-        } catch (\Exception $e) {
-            Log::error('检查游戏状态变化失败', [
-                'table_id' => $tableId,
-                'error' => $e->getMessage()
-            ]);
-            return false;
-        }
-    }
-
-    /**
-     * 批量获取多个台桌的游戏状态
-     * @param array $tableIds 台桌ID数组
-     * @return array
-     */
-    public static function batchGetGameStatus(array $tableIds)
-    {
-        $results = [];
-        
-        foreach ($tableIds as $tableId) {
-            $results[$tableId] = self::getGameStatus($tableId);
-        }
-        
-        return $results;
-    }
-
-    /**
-     * 获取所有活跃的游戏状态
-     * @return array
-     */
-    public static function getAllActiveGameStatus()
-    {
-        try {
-            self::ensureConnection();
-            
-            $pattern = self::$prefix . "table:*:status";
-            $keys = self::$redis->keys($pattern);
-            
-            if (empty($keys)) {
-                return [];
-            }
-
-            $results = [];
-            foreach ($keys as $key) {
-                $data = self::$redis->get($key);
-                if ($data !== false) {
-                    $status = json_decode($data, true);
-                    if ($status && isset($status['table_id'])) {
-                        $tableId = $status['table_id'];
-                        $results[$tableId] = self::enrichGameStatus($status);
-                    }
-                }
-            }
-
-            return $results;
-
-        } catch (\Exception $e) {
-            Log::error('获取所有活跃游戏状态失败', ['error' => $e->getMessage()]);
-            return [];
         }
     }
 
@@ -582,126 +498,6 @@ class RedisGameManager
     }
 
     /**
-     * 清理过期的内存缓存
-     */
-    public static function cleanupCache()
-    {
-        $currentTime = time();
-        foreach (self::$cache as $key => $item) {
-            if (($currentTime - $item['time']) >= self::$cacheExpire) {
-                unset(self::$cache[$key]);
-            }
-        }
-    }
-
-    /**
-     * 获取Redis统计信息
-     * @return array
-     */
-    public static function getRedisStats()
-    {
-        try {
-            self::ensureConnection();
-            
-            $info = self::$redis->info();
-            
-            return [
-                'connected' => self::$connected,
-                'redis_version' => $info['redis_version'] ?? 'unknown',
-                'used_memory_human' => $info['used_memory_human'] ?? 'unknown',
-                'connected_clients' => $info['connected_clients'] ?? 0,
-                'total_commands_processed' => $info['total_commands_processed'] ?? 0,
-                'keyspace_hits' => $info['keyspace_hits'] ?? 0,
-                'keyspace_misses' => $info['keyspace_misses'] ?? 0,
-                'cache_size' => count(self::$cache),
-                'update_time' => time()
-            ];
-
-        } catch (\Exception $e) {
-            return [
-                'connected' => false,
-                'error' => $e->getMessage(),
-                'cache_size' => count(self::$cache),
-                'update_time' => time()
-            ];
-        }
-    }
-
-    /**
-     * 执行Redis命令
-     * @param string $command
-     * @param array $params
-     * @return mixed
-     */
-    public static function executeCommand($command, array $params = [])
-    {
-        try {
-            self::ensureConnection();
-            
-            if (empty($params)) {
-                return self::$redis->$command();
-            } else {
-                return call_user_func_array([self::$redis, $command], $params);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('执行Redis命令失败', [
-                'command' => $command,
-                'params' => $params,
-                'error' => $e->getMessage()
-            ]);
-            return false;
-        }
-    }
-
-    /**
-     * 获取指定前缀的所有键
-     * @param string $pattern
-     * @return array
-     */
-    public static function getKeys($pattern = '*')
-    {
-        try {
-            self::ensureConnection();
-            
-            $fullPattern = self::$prefix . $pattern;
-            return self::$redis->keys($fullPattern);
-
-        } catch (\Exception $e) {
-            Log::error('获取Redis键失败', [
-                'pattern' => $pattern,
-                'error' => $e->getMessage()
-            ]);
-            return [];
-        }
-    }
-
-    /**
-     * 关闭Redis连接
-     */
-    public static function close()
-    {
-        try {
-            if (self::$redis instanceof \Redis && self::$connected) {
-                self::$redis->close();
-                self::$connected = false;
-                echo "[RedisGameManager] Redis连接已关闭\n";
-            }
-        } catch (\Exception $e) {
-            Log::error('关闭Redis连接失败', ['error' => $e->getMessage()]);
-        }
-    }
-
-    /**
-     * 重连Redis
-     */
-    public static function reconnect()
-    {
-        self::close();
-        self::connect();
-    }
-
-    /**
      * 获取连接状态
      * @return bool
      */
@@ -711,11 +507,69 @@ class RedisGameManager
     }
 
     /**
-     * 设置缓存过期时间
-     * @param int $seconds
+     * 获取Redis配置信息
+     * @return array
      */
-    public static function setCacheExpire($seconds)
+    public static function getConfig()
     {
-        self::$cacheExpire = max(1, (int)$seconds);
+        return [
+            'host' => self::$config['host'],
+            'port' => self::$config['port'],
+            'database' => self::$config['database'],
+            'prefix' => self::$prefix,
+            'connected' => self::$connected,
+            'cache_count' => count(self::$cache),
+            'cache_expire' => self::$cacheExpire
+        ];
+    }
+
+    /**
+     * 获取最近的游戏结果（限制数量，避免性能问题）
+     * @param int $tableId 台桌ID
+     * @param int $limit 数量限制（最大10）
+     * @return array
+     */
+    public static function getRecentResults($tableId, $limit = 5)
+    {
+        try {
+            self::ensureConnection();
+            
+            // 限制最大查询数量，避免性能问题
+            $limit = min($limit, 10);
+            
+            $pattern = self::$prefix . "table:{$tableId}:result:*";
+            $keys = self::$redis->keys($pattern);
+            
+            if (empty($keys)) {
+                return [];
+            }
+
+            // 按键名排序（包含时间信息）
+            rsort($keys);
+            
+            // 限制数量
+            $keys = array_slice($keys, 0, $limit);
+            
+            $results = [];
+            foreach ($keys as $key) {
+                $data = self::$redis->get($key);
+                if ($data !== false) {
+                    $result = json_decode($data, true);
+                    if ($result) {
+                        $results[] = self::enrichGameResult($result);
+                    }
+                }
+            }
+
+            return $results;
+
+        } catch (\Exception $e) {
+            Log::error('获取最近游戏结果失败', [
+                'table_id' => $tableId,
+                'limit' => $limit,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
     }
 }

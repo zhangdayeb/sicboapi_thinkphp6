@@ -4,20 +4,20 @@ namespace app\websocket\events;
 
 use Workerman\Connection\TcpConnection;
 use app\websocket\ConnectionManager;
-use app\websocket\AuthManager;
-use app\websocket\TableManager;
 use app\websocket\RedisGameManager;
 use think\facade\Log;
+use think\facade\Db;
 
 /**
  * 游戏事件处理器 - 简化版
- * 只处理台桌加入/离开、游戏状态查询等基础游戏相关消息
+ * 只保留4个核心方法，专注于台桌加入/离开、游戏状态查询等基础游戏功能
+ * 集成简单的台桌验证逻辑，删除统计功能、批量操作等复杂功能
  * 适配 PHP 7.3 + ThinkPHP6
  */
 class GameEventHandler
 {
     /**
-     * 处理游戏相关消息
+     * 1. 处理游戏相关消息（主入口）
      * @param TcpConnection $connection
      * @param array $message
      */
@@ -57,20 +57,14 @@ class GameEventHandler
     }
 
     /**
-     * 处理加入台桌
+     * 2. 处理加入台桌
      * @param TcpConnection $connection
      * @param array $message
      */
-    private static function handleJoinTable(TcpConnection $connection, array $message)
+    public static function handleJoinTable(TcpConnection $connection, array $message)
     {
         $connectionId = spl_object_hash($connection);
         $userId = self::getConnectionUserId($connection);
-
-        // 检查是否已认证
-        if (!self::isAuthenticated($connection)) {
-            self::sendError($connection, '请先进行身份认证');
-            return;
-        }
 
         // 验证参数
         if (!self::validateJoinTableMessage($message)) {
@@ -82,34 +76,14 @@ class GameEventHandler
 
         try {
             // 验证台桌是否存在且可用
-            $table = TableManager::getTableInfo($tableId);
-            
-            if (!$table) {
-                self::sendError($connection, '台桌不存在');
-                return;
-            }
-
-            // 检查台桌状态
-            if ($table['status'] != 1) {
-                self::sendError($connection, '台桌当前不可用');
-                return;
-            }
-
-            // 检查台桌类型（确保是骰宝游戏）
-            if ($table['game_type'] != 9) {
-                self::sendError($connection, '该台桌不是骰宝游戏台桌');
-                return;
-            }
-
-            // 检查用户权限（如果需要）
-            if (!AuthManager::checkUserPermission($userId, 'join_table', $tableId)) {
-                self::sendError($connection, '您没有权限加入此台桌');
+            if (!self::validateTable($tableId)) {
+                self::sendError($connection, '台桌不存在或当前不可用');
                 return;
             }
 
             // 检查台桌连接数限制
             $currentConnections = ConnectionManager::getTableConnectionCount($tableId);
-            $maxConnections = 100; // 可以从配置读取
+            $maxConnections = 100; // 可配置
             
             if ($currentConnections >= $maxConnections) {
                 self::sendError($connection, '台桌人数已满，请稍后再试');
@@ -130,15 +104,18 @@ class GameEventHandler
             // 获取台桌在线人数
             $onlineCount = ConnectionManager::getTableConnectionCount($tableId);
 
+            // 获取台桌基本信息
+            $tableInfo = self::getTableInfo($tableId);
+
             // 发送加入成功响应
             self::sendSuccess($connection, 'join_table_success', [
                 'table_id' => $tableId,
-                'table_name' => $table['table_title'] ?? "台桌{$tableId}",
+                'table_name' => $tableInfo['table_title'] ?? "台桌{$tableId}",
                 'table_info' => [
-                    'status' => $table['status'],
-                    'run_status' => $table['run_status'] ?? 0,
-                    'min_bet' => $table['min_bet'] ?? 10,
-                    'max_bet' => $table['max_bet'] ?? 50000
+                    'status' => $tableInfo['status'] ?? 1,
+                    'run_status' => $tableInfo['run_status'] ?? 0,
+                    'min_bet' => $tableInfo['min_bet'] ?? 10,
+                    'max_bet' => $tableInfo['max_bet'] ?? 50000
                 ],
                 'game_status' => $gameStatus,
                 'online_count' => $onlineCount,
@@ -160,7 +137,7 @@ class GameEventHandler
             Log::info('用户加入台桌', [
                 'user_id' => $userId,
                 'table_id' => $tableId,
-                'table_name' => $table['table_title'] ?? '',
+                'table_name' => $tableInfo['table_title'] ?? '',
                 'connection_id' => $connectionId,
                 'online_count' => $onlineCount
             ]);
@@ -182,21 +159,15 @@ class GameEventHandler
     }
 
     /**
-     * 处理离开台桌
+     * 3. 处理离开台桌
      * @param TcpConnection $connection
      * @param array $message
      */
-    private static function handleLeaveTable(TcpConnection $connection, array $message)
+    public static function handleLeaveTable(TcpConnection $connection, array $message)
     {
         $connectionId = spl_object_hash($connection);
         $userId = self::getConnectionUserId($connection);
         $tableId = self::getConnectionTableId($connection);
-
-        // 检查是否已认证
-        if (!self::isAuthenticated($connection)) {
-            self::sendError($connection, '请先进行身份认证');
-            return;
-        }
 
         // 检查是否在台桌中
         if (!$tableId) {
@@ -253,20 +224,14 @@ class GameEventHandler
     }
 
     /**
-     * 处理游戏状态查询
+     * 4. 处理游戏状态查询
      * @param TcpConnection $connection
      * @param array $message
      */
-    private static function handleGameStatus(TcpConnection $connection, array $message)
+    public static function handleGameStatus(TcpConnection $connection, array $message)
     {
         $userId = self::getConnectionUserId($connection);
         $tableId = self::getConnectionTableId($connection);
-
-        // 检查是否已认证
-        if (!self::isAuthenticated($connection)) {
-            self::sendError($connection, '请先进行身份认证');
-            return;
-        }
 
         // 检查是否在台桌中
         if (!$tableId) {
@@ -279,13 +244,13 @@ class GameEventHandler
             $gameStatus = RedisGameManager::getGameStatus($tableId);
             
             // 获取台桌基本信息
-            $tableInfo = TableManager::getTableInfo($tableId);
+            $tableInfo = self::getTableInfo($tableId);
             
             // 获取在线人数
             $onlineCount = ConnectionManager::getTableConnectionCount($tableId);
             
             // 获取最近游戏历史（最近5局）
-            $recentHistory = TableManager::getTableHistory($tableId, 5);
+            $recentHistory = RedisGameManager::getRecentResults($tableId, 5);
 
             // 发送游戏状态响应
             self::sendSuccess($connection, 'game_status_response', [
@@ -293,22 +258,15 @@ class GameEventHandler
                 'table_info' => [
                     'table_name' => $tableInfo['table_title'] ?? "台桌{$tableId}",
                     'status' => $tableInfo['status'] ?? 1,
-                    'run_status' => $tableInfo['run_status'] ?? 0
+                    'run_status' => $tableInfo['run_status'] ?? 0,
+                    'min_bet' => $tableInfo['min_bet'] ?? 10,
+                    'max_bet' => $tableInfo['max_bet'] ?? 50000
                 ],
                 'game_status' => $gameStatus,
                 'online_count' => $onlineCount,
                 'recent_history' => $recentHistory,
                 'query_time' => time()
             ], '游戏状态获取成功');
-
-            // 记录查询日志（调试时使用）
-            if (defined('APP_DEBUG') && APP_DEBUG) {
-                Log::debug('用户查询游戏状态', [
-                    'user_id' => $userId,
-                    'table_id' => $tableId,
-                    'game_status' => $gameStatus['status'] ?? 'unknown'
-                ]);
-            }
 
         } catch (\Exception $e) {
             Log::error('获取游戏状态异常', [
@@ -320,6 +278,87 @@ class GameEventHandler
             ]);
             
             self::sendError($connection, '获取游戏状态失败，系统异常');
+        }
+    }
+
+    // ========================================
+    // 私有辅助方法
+    // ========================================
+
+    /**
+     * 验证台桌是否存在且可用（集成简单台桌验证）
+     * @param int $tableId
+     * @return bool
+     */
+    private static function validateTable($tableId)
+    {
+        try {
+            $table = Db::name('dianji_table')
+                ->where('id', $tableId)
+                ->where('game_type', 9) // 骰宝游戏类型
+                ->where('status', 1)    // 开放状态
+                ->find();
+                
+            return $table !== null;
+            
+        } catch (\Exception $e) {
+            Log::error('验证台桌失败', [
+                'table_id' => $tableId,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * 获取台桌基本信息（集成简单台桌信息获取）
+     * @param int $tableId
+     * @return array
+     */
+    private static function getTableInfo($tableId)
+    {
+        try {
+            $table = Db::name('dianji_table')
+                ->where('id', $tableId)
+                ->where('game_type', 9)
+                ->find();
+                
+            if (!$table) {
+                return [
+                    'id' => $tableId,
+                    'table_title' => "台桌{$tableId}",
+                    'status' => 0,
+                    'run_status' => 0,
+                    'min_bet' => 10,
+                    'max_bet' => 50000
+                ];
+            }
+
+            return [
+                'id' => (int)$table['id'],
+                'table_title' => $table['table_title'] ?? "台桌{$tableId}",
+                'status' => (int)($table['status'] ?? 0),
+                'run_status' => (int)($table['run_status'] ?? 0),
+                'min_bet' => (int)($table['min_bet'] ?? 10),
+                'max_bet' => (int)($table['max_bet'] ?? 50000),
+                'game_config' => $table['game_config'] ? json_decode($table['game_config'], true) : []
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('获取台桌信息失败', [
+                'table_id' => $tableId,
+                'error' => $e->getMessage()
+            ]);
+            
+            // 返回默认信息
+            return [
+                'id' => $tableId,
+                'table_title' => "台桌{$tableId}",
+                'status' => 0,
+                'run_status' => 0,
+                'min_bet' => 10,
+                'max_bet' => 50000
+            ];
         }
     }
 
@@ -378,23 +417,11 @@ class GameEventHandler
     }
 
     /**
-     * 检查连接是否已认证
-     * @param TcpConnection $connection
-     * @return bool
-     */
-    private static function isAuthenticated(TcpConnection $connection)
-    {
-        $connectionId = spl_object_hash($connection);
-        $connectionData = ConnectionManager::getConnection($connectionId);
-        
-        return $connectionData && $connectionData['auth_status'] === true;
-    }
-
-    /**
      * 广播消息到台桌
      * @param int $tableId
      * @param array $data
      * @param array $excludeConnections
+     * @return int
      */
     private static function broadcastToTable($tableId, array $data, array $excludeConnections = [])
     {
@@ -455,102 +482,6 @@ class GameEventHandler
                 'error' => $e->getMessage(),
                 'data' => $data
             ]);
-        }
-    }
-
-    /**
-     * 获取台桌统计信息
-     * @param int $tableId
-     * @return array
-     */
-    public static function getTableStats($tableId)
-    {
-        try {
-            return [
-                'table_id' => $tableId,
-                'online_count' => ConnectionManager::getTableConnectionCount($tableId),
-                'game_status' => RedisGameManager::getGameStatus($tableId),
-                'table_info' => TableManager::getTableInfo($tableId),
-                'update_time' => time()
-            ];
-            
-        } catch (\Exception $e) {
-            Log::error('获取台桌统计失败', [
-                'table_id' => $tableId,
-                'error' => $e->getMessage()
-            ]);
-            
-            return [
-                'table_id' => $tableId,
-                'online_count' => 0,
-                'game_status' => null,
-                'table_info' => null,
-                'update_time' => time(),
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * 批量获取台桌统计
-     * @param array $tableIds
-     * @return array
-     */
-    public static function batchGetTableStats(array $tableIds)
-    {
-        $results = [];
-        
-        foreach ($tableIds as $tableId) {
-            $results[$tableId] = self::getTableStats($tableId);
-        }
-        
-        return $results;
-    }
-
-    /**
-     * 强制清空台桌所有用户
-     * @param int $tableId
-     * @param string $reason
-     * @return int 清空的连接数
-     */
-    public static function clearTableUsers($tableId, $reason = '台桌维护')
-    {
-        try {
-            // 发送台桌清空通知
-            $message = [
-                'type' => 'table_cleared',
-                'success' => false,
-                'message' => $reason,
-                'data' => [
-                    'table_id' => $tableId,
-                    'clear_time' => time()
-                ],
-                'timestamp' => time()
-            ];
-
-            // 广播到台桌所有用户
-            $sentCount = self::broadcastToTable($tableId, $message);
-            
-            // 强制离开台桌
-            ConnectionManager::clearTableConnections($tableId);
-
-            // 记录日志
-            Log::warning('台桌用户被清空', [
-                'table_id' => $tableId,
-                'reason' => $reason,
-                'affected_connections' => $sentCount
-            ]);
-
-            return $sentCount;
-
-        } catch (\Exception $e) {
-            Log::error('清空台桌用户失败', [
-                'table_id' => $tableId,
-                'reason' => $reason,
-                'error' => $e->getMessage()
-            ]);
-            
-            return 0;
         }
     }
 }

@@ -6,8 +6,9 @@ use app\websocket\ConnectionManager;
 use think\facade\Log;
 
 /**
- * 推送发送器 - 5个核心推送
- * 专注于骰宝游戏必需的实时推送功能
+ * 推送发送器 - 简化版
+ * 只保留5个核心推送方法，专注于骰宝游戏必需的实时推送功能
+ * 删除批量处理、测试功能、复杂统计等非必要功能
  * 适配 PHP 7.3 + ThinkPHP6
  */
 class NotificationSender
@@ -29,22 +30,7 @@ class NotificationSender
     const PRIORITY_URGENT = 4;
 
     /**
-     * 推送统计数据
-     * @var array
-     */
-    private static $stats = [
-        'total_sent' => 0,
-        'game_start_sent' => 0,
-        'countdown_sent' => 0,
-        'game_end_sent' => 0,
-        'game_result_sent' => 0,
-        'win_info_sent' => 0,
-        'failed_count' => 0,
-        'last_reset' => 0
-    ];
-
-    /**
-     * 推送1: 发送游戏开始通知
+     * 1. 发送游戏开始通知
      * @param int $tableId 台桌ID
      * @param array $gameData 游戏数据
      * @return int 发送成功的连接数
@@ -69,11 +55,10 @@ class NotificationSender
 
             $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
             
-            // 更新统计
-            self::updateStats('game_start', $sentCount);
-            
             // 记录日志
             self::logNotification(self::TYPE_GAME_START, $tableId, $gameData, $sentCount);
+            
+            echo "[NotificationSender] 游戏开始推送: 台桌{$tableId}, 发送数{$sentCount}\n";
             
             return $sentCount;
             
@@ -84,7 +69,7 @@ class NotificationSender
     }
 
     /**
-     * 推送2: 发送倒计时更新通知
+     * 2. 发送倒计时更新通知
      * @param int $tableId 台桌ID
      * @param array $countdownData 倒计时数据
      * @return int 发送成功的连接数
@@ -110,12 +95,10 @@ class NotificationSender
 
             $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
             
-            // 更新统计
-            self::updateStats('countdown', $sentCount);
-            
-            // 记录关键倒计时日志
+            // 只记录关键倒计时日志（减少日志量）
             if ($remainingTime <= 5 || in_array($remainingTime, [30, 20, 10])) {
                 self::logNotification(self::TYPE_COUNTDOWN, $tableId, $countdownData, $sentCount);
+                echo "[NotificationSender] 倒计时推送: 台桌{$tableId}, 剩余{$remainingTime}秒, 发送数{$sentCount}\n";
             }
             
             return $sentCount;
@@ -127,7 +110,7 @@ class NotificationSender
     }
 
     /**
-     * 推送3: 发送游戏结束通知
+     * 3. 发送游戏结束通知
      * @param int $tableId 台桌ID
      * @param array $gameData 游戏数据
      * @return int 发送成功的连接数
@@ -149,11 +132,10 @@ class NotificationSender
 
             $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
             
-            // 更新统计
-            self::updateStats('game_end', $sentCount);
-            
             // 记录日志
             self::logNotification(self::TYPE_GAME_END, $tableId, $gameData, $sentCount);
+            
+            echo "[NotificationSender] 游戏结束推送: 台桌{$tableId}, 发送数{$sentCount}\n";
             
             return $sentCount;
             
@@ -164,7 +146,7 @@ class NotificationSender
     }
 
     /**
-     * 推送4: 发送开奖结果通知
+     * 4. 发送开奖结果通知
      * @param int $tableId 台桌ID
      * @param array $gameData 游戏数据
      * @param array $result 开奖结果
@@ -216,11 +198,10 @@ class NotificationSender
 
             $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
             
-            // 更新统计
-            self::updateStats('game_result', $sentCount);
-            
             // 记录日志
             self::logNotification(self::TYPE_GAME_RESULT, $tableId, array_merge($gameData, $result), $sentCount);
+            
+            echo "[NotificationSender] 开奖结果推送: 台桌{$tableId}, 结果{$dice1}-{$dice2}-{$dice3}, 发送数{$sentCount}\n";
             
             return $sentCount;
             
@@ -231,7 +212,7 @@ class NotificationSender
     }
 
     /**
-     * 推送5: 发送个人中奖信息通知
+     * 5. 发送个人中奖信息通知
      * @param int $userId 用户ID
      * @param array $winData 中奖数据
      * @return int 发送成功的连接数
@@ -261,11 +242,10 @@ class NotificationSender
 
             $sentCount = ConnectionManager::sendToUser($userId, $message);
             
-            // 更新统计
-            self::updateStats('win_info', $sentCount);
-            
             // 记录中奖日志
             self::logWinNotification($userId, $winData, $sentCount);
+            
+            echo "[NotificationSender] 中奖信息推送: 用户{$userId}, 金额{$winAmount}, 发送数{$sentCount}\n";
             
             return $sentCount;
             
@@ -275,69 +255,9 @@ class NotificationSender
         }
     }
 
-    /**
-     * 批量发送推送（辅助方法）
-     * @param array $notifications 推送数据数组
-     * @return array 发送结果
-     */
-    public static function batchSend(array $notifications)
-    {
-        $results = [];
-        
-        foreach ($notifications as $index => $notification) {
-            try {
-                $type = $notification['type'] ?? '';
-                $target = $notification['target'] ?? null;
-                $data = $notification['data'] ?? [];
-                
-                $sentCount = 0;
-                
-                switch ($type) {
-                    case self::TYPE_GAME_START:
-                        $sentCount = self::sendGameStart($target, $data);
-                        break;
-                        
-                    case self::TYPE_COUNTDOWN:
-                        $sentCount = self::sendCountdown($target, $data);
-                        break;
-                        
-                    case self::TYPE_GAME_END:
-                        $sentCount = self::sendGameEnd($target, $data);
-                        break;
-                        
-                    case self::TYPE_GAME_RESULT:
-                        $sentCount = self::sendGameResult($target, $data, $data['result'] ?? []);
-                        break;
-                        
-                    case self::TYPE_WIN_INFO:
-                        $sentCount = self::sendWinInfo($target, $data);
-                        break;
-                        
-                    default:
-                        throw new \Exception('Unknown notification type: ' . $type);
-                }
-                
-                $results[$index] = [
-                    'success' => true,
-                    'sent_count' => $sentCount
-                ];
-                
-            } catch (\Exception $e) {
-                $results[$index] = [
-                    'success' => false,
-                    'error' => $e->getMessage()
-                ];
-                
-                Log::error('批量发送推送失败', [
-                    'index' => $index,
-                    'notification' => $notification,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-        
-        return $results;
-    }
+    // ========================================
+    // 私有辅助方法
+    // ========================================
 
     /**
      * 格式化开奖结果消息
@@ -403,25 +323,6 @@ class NotificationSender
     }
 
     /**
-     * 更新推送统计
-     * @param string $type
-     * @param int $sentCount
-     */
-    private static function updateStats($type, $sentCount)
-    {
-        if (self::$stats['last_reset'] === 0) {
-            self::$stats['last_reset'] = time();
-        }
-
-        self::$stats['total_sent'] += $sentCount;
-        self::$stats[$type . '_sent'] += $sentCount;
-        
-        if ($sentCount === 0) {
-            self::$stats['failed_count']++;
-        }
-    }
-
-    /**
      * 记录推送日志
      * @param string $type
      * @param int $target
@@ -465,8 +366,6 @@ class NotificationSender
      */
     private static function handleSendError($type, $target, \Exception $e)
     {
-        self::$stats['failed_count']++;
-        
         Log::error('推送发送失败', [
             'type' => $type,
             'target' => $target,
@@ -474,114 +373,7 @@ class NotificationSender
             'file' => $e->getFile(),
             'line' => $e->getLine()
         ]);
-    }
-
-    /**
-     * 获取推送统计信息
-     * @return array
-     */
-    public static function getStats()
-    {
-        $runtime = time() - self::$stats['last_reset'];
         
-        return array_merge(self::$stats, [
-            'runtime_seconds' => $runtime,
-            'avg_per_minute' => $runtime > 0 ? round((self::$stats['total_sent'] / $runtime) * 60, 2) : 0,
-            'success_rate' => self::$stats['total_sent'] > 0 
-                ? round(((self::$stats['total_sent'] - self::$stats['failed_count']) / self::$stats['total_sent']) * 100, 2) 
-                : 100,
-            'update_time' => time()
-        ]);
-    }
-
-    /**
-     * 重置推送统计
-     */
-    public static function resetStats()
-    {
-        self::$stats = [
-            'total_sent' => 0,
-            'game_start_sent' => 0,
-            'countdown_sent' => 0,
-            'game_end_sent' => 0,
-            'game_result_sent' => 0,
-            'win_info_sent' => 0,
-            'failed_count' => 0,
-            'last_reset' => time()
-        ];
-        
-        Log::info('推送统计已重置');
-    }
-
-    /**
-     * 获取推送类型列表
-     * @return array
-     */
-    public static function getNotificationTypes()
-    {
-        return [
-            self::TYPE_GAME_START => '游戏开始',
-            self::TYPE_COUNTDOWN => '倒计时更新',
-            self::TYPE_GAME_END => '游戏结束',
-            self::TYPE_GAME_RESULT => '开奖结果',
-            self::TYPE_WIN_INFO => '中奖信息'
-        ];
-    }
-
-    /**
-     * 测试推送功能
-     * @param int $tableId
-     * @return array
-     */
-    public static function testNotifications($tableId)
-    {
-        $results = [];
-        
-        try {
-            // 测试游戏开始推送
-            $results['game_start'] = self::sendGameStart($tableId, [
-                'game_number' => 'TEST_' . time(),
-                'round_number' => 1,
-                'countdown' => 30
-            ]);
-            
-            // 测试倒计时推送
-            $results['countdown'] = self::sendCountdown($tableId, [
-                'game_number' => 'TEST_' . time(),
-                'remaining_time' => 10,
-                'total_time' => 30
-            ]);
-            
-            // 测试游戏结束推送
-            $results['game_end'] = self::sendGameEnd($tableId, [
-                'game_number' => 'TEST_' . time(),
-                'end_time' => time()
-            ]);
-            
-            // 测试开奖结果推送
-            $results['game_result'] = self::sendGameResult($tableId, [
-                'game_number' => 'TEST_' . time(),
-                'round_number' => 1
-            ], [
-                'dice1' => 3,
-                'dice2' => 4,
-                'dice3' => 5,
-                'winning_bets' => ['big', 'even']
-            ]);
-            
-            Log::info('推送功能测试完成', [
-                'table_id' => $tableId,
-                'results' => $results
-            ]);
-            
-        } catch (\Exception $e) {
-            $results['error'] = $e->getMessage();
-            Log::error('推送功能测试失败', [
-                'table_id' => $tableId,
-                'error' => $e->getMessage()
-            ]);
-        }
-        
-        return $results;
+        echo "[ERROR] 推送发送失败: Type {$type}, Target {$target}, Error: " . $e->getMessage() . "\n";
     }
 }

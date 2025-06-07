@@ -3,14 +3,14 @@
 namespace app\websocket;
 
 use Workerman\Connection\TcpConnection;
-use app\websocket\events\AuthEventHandler;
 use app\websocket\events\GameEventHandler;
-use app\websocket\events\UserEventHandler;
 use think\facade\Log;
+use think\facade\Db;
 
 /**
- * WebSocket 消息处理器 - 完整版
- * 负责解析和路由所有 WebSocket 消息
+ * WebSocket 消息处理器 - 简化版
+ * 只保留10个核心方法，专注于消息解析和路由
+ * 集成简单认证逻辑，删除批量处理等复杂功能
  * 适配 PHP 7.3 + ThinkPHP6
  */
 class MessageHandler
@@ -25,22 +25,6 @@ class MessageHandler
     const MSG_JOIN_TABLE = 'join_table';
     const MSG_LEAVE_TABLE = 'leave_table';
     const MSG_GAME_STATUS = 'game_status';
-    const MSG_GET_BALANCE = 'get_balance';
-    const MSG_GET_BET_HISTORY = 'get_bet_history';
-
-    /**
-     * 消息处理统计
-     */
-    private static $stats = [
-        'total_messages' => 0,
-        'auth_messages' => 0,
-        'game_messages' => 0,
-        'user_messages' => 0,
-        'ping_messages' => 0,
-        'error_messages' => 0,
-        'invalid_messages' => 0,
-        'start_time' => 0
-    ];
 
     /**
      * 最大消息长度（字节）
@@ -53,16 +37,12 @@ class MessageHandler
     const MESSAGE_RATE_LIMIT = 60;
 
     /**
-     * 初始化消息处理器
+     * 消息频率计数器
      */
-    public static function init()
-    {
-        self::$stats['start_time'] = time();
-        echo "[MessageHandler] 消息处理器初始化完成\n";
-    }
+    private static $messageCounters = [];
 
     /**
-     * 处理WebSocket消息
+     * 1. 处理WebSocket消息（主入口）
      * @param TcpConnection $connection
      * @param string $data
      */
@@ -71,31 +51,28 @@ class MessageHandler
         $connectionId = spl_object_hash($connection);
         
         try {
-            // 更新统计
-            self::$stats['total_messages']++;
-            
             // 检查消息长度
             if (strlen($data) > self::MAX_MESSAGE_LENGTH) {
-                self::handleError($connection, 'MESSAGE_TOO_LARGE', '消息长度超过限制');
+                self::sendError($connection, '消息长度超过限制', 'MESSAGE_TOO_LARGE');
                 return;
             }
 
             // 检查消息频率
             if (!self::checkMessageRate($connectionId)) {
-                self::handleError($connection, 'RATE_LIMIT_EXCEEDED', '消息发送过于频繁');
+                self::sendError($connection, '消息发送过于频繁', 'RATE_LIMIT_EXCEEDED');
                 return;
             }
 
             // 解析JSON消息
             $message = json_decode($data, true);
             if (!$message || !is_array($message)) {
-                self::handleError($connection, 'INVALID_JSON', '消息格式错误');
+                self::sendError($connection, '消息格式错误', 'INVALID_JSON');
                 return;
             }
 
             // 检查消息类型
             if (!isset($message['type']) || empty($message['type'])) {
-                self::handleError($connection, 'MISSING_TYPE', '缺少消息类型');
+                self::sendError($connection, '缺少消息类型', 'MISSING_TYPE');
                 return;
             }
 
@@ -104,14 +81,9 @@ class MessageHandler
             // 更新连接活动时间
             ConnectionManager::updatePing($connectionId);
 
-            // 记录调试信息（仅在调试模式下）
-            if (defined('APP_DEBUG') && APP_DEBUG) {
-                echo "[" . date('Y-m-d H:i:s') . "] 收到消息: {$connectionId} -> {$messageType}\n";
-            }
-
             // 验证基础消息格式
-            if (!self::validateMessageFormat($message)) {
-                self::handleError($connection, 'INVALID_FORMAT', '消息格式验证失败');
+            if (!self::validateMessage($message)) {
+                self::sendError($connection, '消息格式验证失败', 'INVALID_FORMAT');
                 return;
             }
 
@@ -126,64 +98,49 @@ class MessageHandler
                     break;
 
                 case self::MSG_AUTH:
+                    self::handleAuth($connection, $message);
+                    break;
+
                 case self::MSG_LOGOUT:
-                    self::$stats['auth_messages']++;
-                    AuthEventHandler::handle($connection, $message);
+                    self::handleLogout($connection, $message);
                     break;
 
                 case self::MSG_JOIN_TABLE:
                 case self::MSG_LEAVE_TABLE:
                 case self::MSG_GAME_STATUS:
-                    self::$stats['game_messages']++;
                     // 这些消息需要先认证
                     if (!self::isAuthenticated($connection)) {
-                        self::handleError($connection, 'AUTH_REQUIRED', '请先进行身份认证');
+                        self::sendError($connection, '请先进行身份认证', 'AUTH_REQUIRED');
                         return;
                     }
                     GameEventHandler::handle($connection, $message);
                     break;
 
-                case self::MSG_GET_BALANCE:
-                case self::MSG_GET_BET_HISTORY:
-                    self::$stats['user_messages']++;
-                    // 这些消息需要先认证
-                    if (!self::isAuthenticated($connection)) {
-                        self::handleError($connection, 'AUTH_REQUIRED', '请先进行身份认证');
-                        return;
-                    }
-                    UserEventHandler::handle($connection, $message);
-                    break;
-
                 default:
-                    self::handleError($connection, 'UNKNOWN_TYPE', '未知的消息类型: ' . $messageType);
+                    self::sendError($connection, '未知的消息类型: ' . $messageType, 'UNKNOWN_TYPE');
                     break;
             }
 
         } catch (\Exception $e) {
-            self::$stats['error_messages']++;
-            
             Log::error('消息处理异常', [
                 'connection_id' => $connectionId,
                 'data' => substr($data, 0, 500),
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
+                'line' => $e->getLine()
             ]);
             
-            self::handleError($connection, 'SERVER_ERROR', '消息处理失败');
+            self::sendError($connection, '消息处理失败', 'SERVER_ERROR');
         }
     }
 
     /**
-     * 处理心跳消息
+     * 2. 处理心跳消息
      * @param TcpConnection $connection
      * @param array $message
      */
     private static function handlePing(TcpConnection $connection, array $message)
     {
-        self::$stats['ping_messages']++;
-        
         $response = [
             'type' => self::MSG_PONG,
             'timestamp' => time(),
@@ -200,7 +157,7 @@ class MessageHandler
     }
 
     /**
-     * 处理心跳响应消息
+     * 3. 处理心跳响应消息
      * @param TcpConnection $connection
      * @param array $message
      */
@@ -213,63 +170,230 @@ class MessageHandler
         if (isset($message['timestamp'])) {
             $latency = time() - (int)$message['timestamp'];
             if ($latency >= 0 && $latency <= 60) {
-                $connectionId = spl_object_hash($connection);
-                $connectionData = ConnectionManager::getConnection($connectionId);
-                if ($connectionData) {
-                    // 这里可以记录连接延迟信息
-                }
+                // 延迟正常，可以记录到连接信息中（可选）
             }
         }
     }
 
     /**
-     * 检查消息频率限制
-     * @param string $connectionId
-     * @return bool
+     * 4. 处理用户认证（集成简单认证逻辑）
+     * @param TcpConnection $connection
+     * @param array $message
      */
-    private static function checkMessageRate($connectionId)
+    private static function handleAuth(TcpConnection $connection, array $message)
     {
-        static $messageCounters = [];
-        static $lastCleanup = 0;
+        $connectionId = spl_object_hash($connection);
         
-        $currentTime = time();
-        $timeWindow = 60; // 60秒窗口
-        
-        // 每5分钟清理一次过期计数器
-        if ($currentTime - $lastCleanup > 300) {
-            $messageCounters = [];
-            $lastCleanup = $currentTime;
+        try {
+            // 验证必需参数
+            if (!isset($message['user_id']) || !isset($message['token'])) {
+                self::sendError($connection, '认证参数不完整，需要user_id和token', 'AUTH_INVALID_PARAMS');
+                return;
+            }
+
+            $userId = (int)$message['user_id'];
+            $token = $message['token'];
+
+            // 基础参数验证
+            if ($userId <= 0 || empty($token)) {
+                self::sendError($connection, '用户ID或token无效', 'AUTH_INVALID_PARAMS');
+                return;
+            }
+
+            // 简单token验证
+            if (!self::validateUserToken($userId, $token)) {
+                self::sendError($connection, '认证失败，用户ID与token不匹配', 'AUTH_FAILED');
+                
+                Log::warning('用户认证失败', [
+                    'user_id' => $userId,
+                    'token' => substr($token, 0, 10) . '...',
+                    'remote_ip' => $connection->getRemoteIp(),
+                    'connection_id' => $connectionId
+                ]);
+                
+                return;
+            }
+
+            // 检查用户状态
+            if (!self::isUserActive($userId)) {
+                self::sendError($connection, '用户账户已被禁用', 'AUTH_USER_INACTIVE');
+                
+                Log::warning('禁用用户尝试连接', [
+                    'user_id' => $userId,
+                    'remote_ip' => $connection->getRemoteIp()
+                ]);
+                
+                return;
+            }
+
+            // 更新连接管理器中的用户信息
+            $success = ConnectionManager::authenticateUser($connectionId, $userId);
+            
+            if (!$success) {
+                self::sendError($connection, '认证处理失败，请重试', 'AUTH_PROCESS_FAILED');
+                return;
+            }
+
+            // 发送认证成功响应
+            self::sendSuccess($connection, 'auth_success', [
+                'user_id' => $userId,
+                'auth_time' => time()
+            ], '认证成功');
+
+            // 记录认证成功日志
+            Log::info('用户WebSocket认证成功', [
+                'user_id' => $userId,
+                'connection_id' => $connectionId,
+                'remote_ip' => $connection->getRemoteIp()
+            ]);
+
+            echo "[" . date('Y-m-d H:i:s') . "] 用户认证成功: UserID {$userId}, Connection {$connectionId}\n";
+
+        } catch (\Exception $e) {
+            Log::error('认证处理异常', [
+                'user_id' => $userId ?? 0,
+                'connection_id' => $connectionId,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            self::sendError($connection, '认证处理异常，请重试', 'AUTH_SERVER_ERROR');
         }
-
-        // 初始化计数器
-        if (!isset($messageCounters[$connectionId])) {
-            $messageCounters[$connectionId] = [
-                'count' => 0,
-                'window_start' => $currentTime
-            ];
-        }
-
-        $counter = &$messageCounters[$connectionId];
-
-        // 检查是否需要重置窗口
-        if ($currentTime - $counter['window_start'] >= $timeWindow) {
-            $counter['count'] = 0;
-            $counter['window_start'] = $currentTime;
-        }
-
-        // 增加计数
-        $counter['count']++;
-
-        // 检查是否超过限制
-        return $counter['count'] <= self::MESSAGE_RATE_LIMIT;
     }
 
     /**
-     * 验证消息格式
+     * 5. 处理用户登出
+     * @param TcpConnection $connection
+     * @param array $message
+     */
+    private static function handleLogout(TcpConnection $connection, array $message)
+    {
+        $connectionId = spl_object_hash($connection);
+        
+        try {
+            // 获取连接信息
+            $connectionData = ConnectionManager::getConnection($connectionId);
+            
+            if (!$connectionData) {
+                self::sendError($connection, '连接信息不存在', 'LOGOUT_CONNECTION_NOT_FOUND');
+                return;
+            }
+
+            if (!$connectionData['auth_status']) {
+                self::sendError($connection, '用户未登录', 'LOGOUT_NOT_AUTHENTICATED');
+                return;
+            }
+
+            $userId = $connectionData['user_id'];
+            $tableId = $connectionData['table_id'];
+
+            // 如果在台桌中，先离开台桌
+            if ($tableId) {
+                ConnectionManager::leaveTable($connectionId, $tableId);
+                echo "[" . date('Y-m-d H:i:s') . "] 用户自动离开台桌: UserID {$userId}, Table {$tableId}\n";
+            }
+
+            // 清除认证状态（保持连接，只清除认证）
+            ConnectionManager::clearAuthentication($connectionId);
+
+            // 发送登出成功响应
+            self::sendSuccess($connection, 'logout_success', [
+                'user_id' => $userId,
+                'logout_time' => time()
+            ], '登出成功');
+
+            // 记录登出日志
+            Log::info('用户WebSocket登出', [
+                'user_id' => $userId,
+                'connection_id' => $connectionId,
+                'was_in_table' => $tableId ? true : false,
+                'table_id' => $tableId
+            ]);
+
+            echo "[" . date('Y-m-d H:i:s') . "] 用户登出: UserID {$userId}, Connection {$connectionId}\n";
+
+        } catch (\Exception $e) {
+            Log::error('登出处理异常', [
+                'connection_id' => $connectionId,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            self::sendError($connection, '登出处理失败', 'LOGOUT_SERVER_ERROR');
+        }
+    }
+
+    /**
+     * 6. 发送成功响应
+     * @param TcpConnection $connection
+     * @param string $type
+     * @param array $data
+     * @param string $message
+     */
+    public static function sendSuccess(TcpConnection $connection, $type, array $data = [], $message = 'success')
+    {
+        $response = [
+            'type' => $type,
+            'success' => true,
+            'message' => $message,
+            'data' => $data,
+            'timestamp' => time()
+        ];
+
+        self::sendToConnection($connection, $response);
+    }
+
+    /**
+     * 7. 发送错误响应
+     * @param TcpConnection $connection
+     * @param string $message
+     * @param string $errorCode
+     */
+    public static function sendError(TcpConnection $connection, $message, $errorCode = 'ERROR')
+    {
+        $response = [
+            'type' => 'error',
+            'success' => false,
+            'message' => $message,
+            'error_code' => $errorCode,
+            'timestamp' => time()
+        ];
+
+        self::sendToConnection($connection, $response);
+    }
+
+    /**
+     * 8. 发送消息到连接
+     * @param TcpConnection $connection
+     * @param array $data
+     * @return bool
+     */
+    public static function sendToConnection(TcpConnection $connection, array $data)
+    {
+        return ConnectionManager::sendToConnection($connection, $data);
+    }
+
+    /**
+     * 9. 验证连接是否已认证
+     * @param TcpConnection $connection
+     * @return bool
+     */
+    public static function isAuthenticated(TcpConnection $connection)
+    {
+        $connectionId = spl_object_hash($connection);
+        $connectionData = ConnectionManager::getConnection($connectionId);
+        
+        return $connectionData && $connectionData['auth_status'] === true;
+    }
+
+    /**
+     * 10. 验证消息格式
      * @param array $message
      * @return bool
      */
-    private static function validateMessageFormat(array $message)
+    public static function validateMessage(array $message)
     {
         // 检查必需字段
         if (!isset($message['type'])) {
@@ -304,129 +428,106 @@ class MessageHandler
         return true;
     }
 
-    /**
-     * 处理错误消息
-     * @param TcpConnection $connection
-     * @param string $errorCode
-     * @param string $errorMessage
-     */
-    private static function handleError(TcpConnection $connection, $errorCode, $errorMessage)
-    {
-        self::$stats['invalid_messages']++;
-        
-        $connectionId = spl_object_hash($connection);
-        
-        // 记录错误日志
-        Log::warning('WebSocket消息处理错误', [
-            'connection_id' => $connectionId,
-            'error_code' => $errorCode,
-            'error_message' => $errorMessage,
-            'remote_ip' => $connection->getRemoteIp()
-        ]);
-
-        // 发送错误响应
-        self::sendError($connection, $errorMessage, $errorCode);
-    }
+    // ========================================
+    // 辅助方法（内部使用）
+    // ========================================
 
     /**
-     * 发送成功响应
-     * @param TcpConnection $connection
-     * @param string $type
-     * @param array $data
-     * @param string $message
-     */
-    public static function sendSuccess(TcpConnection $connection, $type, array $data = [], $message = 'success')
-    {
-        $response = [
-            'type' => $type,
-            'success' => true,
-            'message' => $message,
-            'data' => $data,
-            'timestamp' => time()
-        ];
-
-        self::sendToConnection($connection, $response);
-    }
-
-    /**
-     * 发送错误响应
-     * @param TcpConnection $connection
-     * @param string $message
-     * @param string $errorCode
-     */
-    public static function sendError(TcpConnection $connection, $message, $errorCode = 'ERROR')
-    {
-        $response = [
-            'type' => 'error',
-            'success' => false,
-            'message' => $message,
-            'error_code' => $errorCode,
-            'timestamp' => time()
-        ];
-
-        self::sendToConnection($connection, $response);
-    }
-
-    /**
-     * 发送通知消息
-     * @param TcpConnection $connection
-     * @param string $title
-     * @param string $content
-     * @param array $extra
-     */
-    public static function sendNotification(TcpConnection $connection, $title, $content, array $extra = [])
-    {
-        $response = array_merge([
-            'type' => 'notification',
-            'title' => $title,
-            'content' => $content,
-            'timestamp' => time()
-        ], $extra);
-
-        self::sendToConnection($connection, $response);
-    }
-
-    /**
-     * 发送消息到连接
-     * @param TcpConnection $connection
-     * @param array $data
+     * 检查消息频率限制
+     * @param string $connectionId
      * @return bool
      */
-    public static function sendToConnection(TcpConnection $connection, array $data)
+    private static function checkMessageRate($connectionId)
     {
-        return ConnectionManager::sendToConnection($connection, $data);
+        $currentTime = time();
+        $timeWindow = 60; // 60秒窗口
+        
+        // 每5分钟清理一次过期计数器
+        static $lastCleanup = 0;
+        if ($currentTime - $lastCleanup > 300) {
+            self::$messageCounters = [];
+            $lastCleanup = $currentTime;
+        }
+
+        // 初始化计数器
+        if (!isset(self::$messageCounters[$connectionId])) {
+            self::$messageCounters[$connectionId] = [
+                'count' => 0,
+                'window_start' => $currentTime
+            ];
+        }
+
+        $counter = &self::$messageCounters[$connectionId];
+
+        // 检查是否需要重置窗口
+        if ($currentTime - $counter['window_start'] >= $timeWindow) {
+            $counter['count'] = 0;
+            $counter['window_start'] = $currentTime;
+        }
+
+        // 增加计数
+        $counter['count']++;
+
+        // 检查是否超过限制
+        return $counter['count'] <= self::MESSAGE_RATE_LIMIT;
     }
 
     /**
-     * 验证连接是否已认证
-     * @param TcpConnection $connection
+     * 简单token验证（集成的认证逻辑）
+     * @param int $userId
+     * @param string $token
      * @return bool
      */
-    public static function isAuthenticated(TcpConnection $connection)
+    private static function validateUserToken($userId, $token)
     {
-        $connectionId = spl_object_hash($connection);
-        $connectionData = ConnectionManager::getConnection($connectionId);
+        // 简单的token生成策略：user_id + 固定密钥的MD5
+        $secret = 'sicbo_websocket_secret_2024'; // 可配置
+        $expectedToken = md5($userId . '_' . $secret . '_websocket');
         
-        return $connectionData && $connectionData['auth_status'] === true;
+        return $token === $expectedToken;
     }
 
     /**
-     * 验证连接是否在台桌中
-     * @param TcpConnection $connection
-     * @return int|null 台桌ID或null
+     * 检查用户是否活跃可用
+     * @param int $userId
+     * @return bool
      */
-    public static function getConnectionTableId(TcpConnection $connection)
+    private static function isUserActive($userId)
     {
-        $connectionId = spl_object_hash($connection);
-        $connectionData = ConnectionManager::getConnection($connectionId);
-        
-        return $connectionData ? $connectionData['table_id'] : null;
+        try {
+            // 尝试常见的用户表名
+            $tableNames = ['common_user', 'users', 'user', 'dianji_user'];
+            
+            foreach ($tableNames as $tableName) {
+                try {
+                    $user = Db::name($tableName)
+                        ->where('id', $userId)
+                        ->find();
+                        
+                    if ($user) {
+                        return (int)($user['status'] ?? 0) === 1; // 1=活跃
+                    }
+                } catch (\Exception $e) {
+                    // 表不存在，尝试下一个
+                    continue;
+                }
+            }
+            
+            return false;
+            
+        } catch (\Exception $e) {
+            Log::error('检查用户状态失败', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
     }
 
     /**
      * 获取连接的用户ID
      * @param TcpConnection $connection
-     * @return int|null 用户ID或null
+     * @return int|null
      */
     public static function getConnectionUserId(TcpConnection $connection)
     {
@@ -437,196 +538,15 @@ class MessageHandler
     }
 
     /**
-     * 广播台桌消息
-     * @param int $tableId
-     * @param array $data
-     * @param array $excludeConnections
-     */
-    public static function broadcastToTable($tableId, array $data, array $excludeConnections = [])
-    {
-        return ConnectionManager::broadcastToTable($tableId, $data, $excludeConnections);
-    }
-
-    /**
-     * 发送用户消息
-     * @param int $userId
-     * @param array $data
-     */
-    public static function sendToUser($userId, array $data)
-    {
-        return ConnectionManager::sendToUser($userId, $data);
-    }
-
-    /**
-     * 全平台广播
-     * @param array $data
-     */
-    public static function broadcastAll(array $data)
-    {
-        return ConnectionManager::broadcastAll($data);
-    }
-
-    /**
-     * 验证消息参数
-     * @param array $message
-     * @param array $requiredFields
-     * @return bool
-     */
-    public static function validateMessage(array $message, array $requiredFields)
-    {
-        foreach ($requiredFields as $field) {
-            if (!isset($message[$field]) || (is_string($message[$field]) && empty($message[$field]))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * 记录消息日志
-     * @param string $connectionId
-     * @param string $type
-     * @param array $message
-     * @param string $level
-     */
-    public static function logMessage($connectionId, $type, array $message, $level = 'info')
-    {
-        Log::record([
-            'connection_id' => $connectionId,
-            'message_type' => $type,
-            'message_data' => $message,
-            'timestamp' => time()
-        ], $level);
-    }
-
-    /**
-     * 获取消息处理统计
-     * @return array
-     */
-    public static function getStats()
-    {
-        $runtime = time() - self::$stats['start_time'];
-        
-        return array_merge(self::$stats, [
-            'runtime_seconds' => $runtime,
-            'messages_per_minute' => $runtime > 0 ? round((self::$stats['total_messages'] / $runtime) * 60, 2) : 0,
-            'error_rate' => self::$stats['total_messages'] > 0 
-                ? round((self::$stats['error_messages'] / self::$stats['total_messages']) * 100, 2) 
-                : 0,
-            'invalid_rate' => self::$stats['total_messages'] > 0 
-                ? round((self::$stats['invalid_messages'] / self::$stats['total_messages']) * 100, 2) 
-                : 0,
-            'update_time' => time()
-        ]);
-    }
-
-    /**
-     * 重置统计信息
-     */
-    public static function resetStats()
-    {
-        self::$stats = [
-            'total_messages' => 0,
-            'auth_messages' => 0,
-            'game_messages' => 0,
-            'user_messages' => 0,
-            'ping_messages' => 0,
-            'error_messages' => 0,
-            'invalid_messages' => 0,
-            'start_time' => time()
-        ];
-        
-        echo "[MessageHandler] 消息统计已重置\n";
-    }
-
-    /**
-     * 获取支持的消息类型列表
-     * @return array
-     */
-    public static function getSupportedMessageTypes()
-    {
-        return [
-            self::MSG_PING => '心跳检测',
-            self::MSG_PONG => '心跳响应',
-            self::MSG_AUTH => '用户认证',
-            self::MSG_LOGOUT => '用户登出',
-            self::MSG_JOIN_TABLE => '加入台桌',
-            self::MSG_LEAVE_TABLE => '离开台桌',
-            self::MSG_GAME_STATUS => '游戏状态查询',
-            self::MSG_GET_BALANCE => '获取余额',
-            self::MSG_GET_BET_HISTORY => '获取投注历史'
-        ];
-    }
-
-    /**
-     * 处理批量消息
+     * 获取连接的台桌ID
      * @param TcpConnection $connection
-     * @param array $messages
-     * @return array 处理结果
+     * @return int|null
      */
-    public static function handleBatch(TcpConnection $connection, array $messages)
-    {
-        $results = [];
-        $maxBatchSize = 10; // 最大批量处理数量
-        
-        if (count($messages) > $maxBatchSize) {
-            self::sendError($connection, "批量消息数量不能超过{$maxBatchSize}个", 'BATCH_TOO_LARGE');
-            return [];
-        }
-
-        foreach ($messages as $index => $messageData) {
-            try {
-                if (is_string($messageData)) {
-                    self::handle($connection, $messageData);
-                    $results[$index] = ['success' => true];
-                } else {
-                    $results[$index] = ['success' => false, 'error' => '消息格式错误'];
-                }
-            } catch (\Exception $e) {
-                $results[$index] = ['success' => false, 'error' => $e->getMessage()];
-            }
-        }
-
-        return $results;
-    }
-
-    /**
-     * 设置消息速率限制
-     * @param int $limit 每分钟最大消息数
-     */
-    public static function setRateLimit($limit)
-    {
-        if ($limit > 0 && $limit <= 1000) {
-            self::MESSAGE_RATE_LIMIT = $limit;
-            echo "[MessageHandler] 消息速率限制已设置为: {$limit}/分钟\n";
-        }
-    }
-
-    /**
-     * 获取连接详细信息
-     * @param TcpConnection $connection
-     * @return array
-     */
-    public static function getConnectionInfo(TcpConnection $connection)
+    public static function getConnectionTableId(TcpConnection $connection)
     {
         $connectionId = spl_object_hash($connection);
         $connectionData = ConnectionManager::getConnection($connectionId);
         
-        if (!$connectionData) {
-            return [];
-        }
-
-        return [
-            'connection_id' => $connectionId,
-            'user_id' => $connectionData['user_id'],
-            'table_id' => $connectionData['table_id'],
-            'auth_status' => $connectionData['auth_status'],
-            'connect_time' => $connectionData['connect_time'],
-            'last_ping' => $connectionData['last_ping'],
-            'last_activity' => $connectionData['last_activity'],
-            'remote_ip' => $connectionData['remote_ip'],
-            'message_count' => $connectionData['message_count'],
-            'duration' => time() - $connectionData['connect_time']
-        ];
+        return $connectionData ? $connectionData['table_id'] : null;
     }
 }
