@@ -3,16 +3,16 @@ use think\facade\Route;
 
 /**
  * ========================================
- * 博彩游戏系统路由配置
+ * 骰宝游戏系统路由配置
  * ========================================
- * 支持：百家乐、龙虎斗、牛牛、骰宝等游戏
- * 包含：荷官操作、用户投注、管理后台、API接口等功能
- * 版本：v2.0
- * 更新：增加骰宝游戏完整路由支持
+ * 专注于：骰宝游戏、用户管理、系统管理
+ * 移除了：百家乐、支付系统相关路由
+ * 版本：v2.1 - 精简版
+ * 更新：移除不需要的路由，专注骰宝游戏
  */
 
 // ========================================
-// 骰宝游戏路由组 (新增)
+// 骰宝游戏路由组
 // ========================================
 
 /**
@@ -432,196 +432,8 @@ Route::group('api/sicbo', function () {
     // 移动端获取推荐投注
     Route::get('mobile/recommendations', 'sicbo.SicboApi/mobileGetRecommendations')
         ->name('sicbo_api_mobile_recommendations');
-    
-    /**
-     * WebHook 回调路由
-     */
-    // 第三方平台回调
-    Route::post('webhook/callback', 'sicbo.SicboApi/webhookCallback')
-        ->name('sicbo_api_webhook');
-    
-    // 支付回调
-    Route::post('webhook/payment', 'sicbo.SicboApi/paymentCallback')
-        ->name('sicbo_api_payment_callback');
 
 })->middleware(['ApiAuth', 'ApiLimit', 'ApiLog']); // API认证、频率限制和日志
-
-// ========================================
-// 原有百家乐游戏路由 (保持兼容)
-// ========================================
-
-/**
- * 百家乐露珠数据获取相关路由
- */
-// 获取露珠列表数据
-Route::rule('bjl/get_table/get_data$', 'game.GetForeignTableInfo/get_lz_list', 'GET')
-    ->name('bjl_get_lz_list');
-
-// 获取荷官端露珠数据
-Route::rule('bjl/get_table/get_hg_data$', 'game.GetForeignTableInfo/get_hg_lz_list', 'GET')
-    ->name('bjl_get_hg_lz_list');
-
-// 获取电投端露珠数据
-Route::rule('api/diantou/table/getData', 'game.GetForeignTableInfo/get_hg_data_list', 'GET')
-    ->name('bjl_get_hg_data_list');
-
-// 获取电投端视频流地址
-Route::rule('api/diantou/table/getTableVideo', 'game.GetForeignTableInfo/get_hg_video_list', 'GET')
-    ->name('bjl_get_hg_video_list');
-
-/**
- * 百家乐台桌基础信息路由
- */
-// 获取台桌视频流信息
-Route::rule('bjl/get_table/get_table_video', 'game.GetForeignTableInfo/get_table_video', 'GET')
-    ->name('bjl_get_table_video');
-
-// 获取台桌列表
-Route::rule('bjl/get_table/list$', 'game.GetForeignTableInfo/get_table_list', 'GET')
-    ->name('bjl_get_table_list');
-
-// 获取台桌统计信息（庄闲和次数等）
-Route::rule('bjl/get_table/get_table_count$', 'game.GetForeignTableInfo/get_table_count', 'GET')
-    ->name('bjl_get_table_count');
-
-// 获取当前台桌详细信息（靴号、铺号等）
-Route::rule('bjl/get_table/table_info$', 'game.GetForeignTableInfo/get_table_info', 'GET')
-    ->name('bjl_get_table_info');
-
-/**
- * 百家乐荷官开牌操作路由
- */
-// 荷官手动开牌设置露珠数据
-Route::rule('bjl/get_table/post_data$', 'game.GetForeignTableInfo/set_post_data', 'POST')
-    ->name('bjl_set_post_data');
-
-// 获取扑克牌详细信息
-Route::rule('bjl/pai/info$', 'game.GetForeignTableInfo/get_pai_info', 'GET')
-    ->name('bjl_get_pai_info');
-
-/**
- * 百家乐游戏控制相关路由
- */
-// 发送开局信号（开始投注倒计时）
-Route::rule('bjl/start/signal$', 'game.GetForeignTableInfo/set_start_signal', 'POST')
-    ->name('bjl_set_start_signal');
-
-// 发送结束信号（停止投注）
-Route::rule('bjl/end/signal$', 'game.GetForeignTableInfo/set_end_signal', 'POST')
-    ->name('bjl_set_end_signal');
-
-// 设置洗牌状态
-Route::rule('bjl/get_table/wash_brand$', 'game.GetForeignTableInfo/get_table_wash_brand', 'POST')
-    ->name('bjl_get_table_wash_brand');
-
-// 手动设置靴号（新一轮游戏开始）
-Route::rule('bjl/get_table/add_xue$', 'game.GetForeignTableInfo/set_xue_number', 'POST')
-    ->name('bjl_set_xue_number');
-
-/**
- * 百家乐露珠管理操作路由
- */
-// 删除指定露珠记录
-Route::rule('bjl/get_table/clear_lu_zhu$', 'game.GetForeignTableInfo/lz_delete', 'DELETE')
-    ->name('bjl_lz_delete');
-
-// 清空指定台桌的所有露珠记录
-Route::rule('bjl/get_table/clear_lu_zhu_one_table$', 'game.GetForeignTableInfo/lz_table_delete', 'DELETE')
-    ->name('bjl_lz_table_delete');
-
-/**
- * 百家乐用户游戏相关路由
- */
-// 用户下注接口
-Route::rule('bjl/bet/order$', 'order.Order/user_bet_order', 'POST')
-    ->name('bjl_user_bet_order');
-
-// 获取用户当前投注记录
-Route::rule('bjl/current/record$', 'order.Order/order_current_record', 'GET')
-    ->name('bjl_order_current_record');
-
-/**
- * 百家乐游戏信息查询路由
- */
-// 获取指定露珠的扑克牌型信息
-Route::rule('bjl/game/poker$', 'game.GameInfo/get_poker_type', 'GET')
-    ->name('bjl_get_poker_type');
-
-/**
- * 百家乐测试环境路由（仅开发调试用）
- */
-// 测试露珠数据接口
-Route::rule('api/test/luzhu', 'game.GetForeignTableInfo/testluzhu', 'GET')
-    ->name('bjl_test_luzhu');
-
-// 测试开牌数据设置接口  
-Route::rule('bjl/get_table/post_data_test$', 'game.GetForeignTableInfo/set_post_data_test', 'POST')
-    ->name('bjl_set_post_data_test');
-
-// ========================================
-// 系统基础路由
-// ========================================
-
-// 首页路由
-Route::rule('/$', 'index/index', 'GET')
-    ->name('homepage');
-
-// 健康检查
-Route::get('health', function() {
-    return json([
-        'status' => 'ok',
-        'timestamp' => time(),
-        'version' => '2.0.0',
-        'services' => [
-            'sicbo' => 'active',
-            'bjl' => 'active',
-            'database' => 'connected',
-            'redis' => 'connected'
-        ]
-    ]);
-})->name('health_check');
-
-// ========================================
-// WebSocket 连接路由
-// ========================================
-
-Route::group('ws', function () {
-    
-    // 骰宝WebSocket连接
-    Route::get('sicbo/:table_id', 'websocket.SicboWebSocket/connect')
-        ->pattern(['table_id' => '\d+'])
-        ->name('sicbo_websocket');
-    
-    // 百家乐WebSocket连接  
-    Route::get('bjl/:table_id', 'websocket.BjlWebSocket/connect')
-        ->pattern(['table_id' => '\d+'])
-        ->name('bjl_websocket');
-    
-    // 系统通知WebSocket
-    Route::get('notifications', 'websocket.NotificationWebSocket/connect')
-        ->name('notification_websocket');
-
-})->middleware(['WebSocketAuth']);
-
-// ========================================
-// 文件上传和资源路由
-// ========================================
-
-Route::group('upload', function () {
-    
-    // 图片上传
-    Route::post('image', 'common.Upload/uploadImage')
-        ->name('upload_image');
-    
-    // 视频上传
-    Route::post('video', 'common.Upload/uploadVideo')
-        ->name('upload_video');
-    
-    // 头像上传
-    Route::post('avatar', 'common.Upload/uploadAvatar')
-        ->name('upload_avatar');
-
-})->middleware(['Auth', 'UploadLimit']);
 
 // ========================================
 // 用户中心路由
@@ -700,39 +512,6 @@ Route::group('auth', function () {
 })->middleware(['ApiLimit']);
 
 // ========================================
-// 支付相关路由
-// ========================================
-
-Route::group('payment', function () {
-    
-    // 发起充值
-    Route::post('deposit', 'payment.Payment/deposit')
-        ->name('payment_deposit');
-    
-    // 发起提现
-    Route::post('withdraw', 'payment.Payment/withdraw')
-        ->name('payment_withdraw');
-    
-    // 获取支付方式
-    Route::get('methods', 'payment.Payment/getPaymentMethods')
-        ->name('payment_methods');
-    
-    // 获取充值记录
-    Route::get('deposits', 'payment.Payment/getDepositRecords')
-        ->name('payment_deposits');
-    
-    // 获取提现记录
-    Route::get('withdrawals', 'payment.Payment/getWithdrawRecords')
-        ->name('payment_withdrawals');
-    
-    // 支付回调处理
-    Route::post('callback/:provider', 'payment.Payment/handleCallback')
-        ->pattern(['provider' => '\w+'])
-        ->name('payment_callback');
-
-})->middleware(['Auth']);
-
-// ========================================
 // 配置和设置路由
 // ========================================
 
@@ -759,6 +538,26 @@ Route::group('config', function () {
         ->name('help_docs');
 
 });
+
+// ========================================
+// 文件上传和资源路由
+// ========================================
+
+Route::group('upload', function () {
+    
+    // 图片上传
+    Route::post('image', 'common.Upload/uploadImage')
+        ->name('upload_image');
+    
+    // 视频上传
+    Route::post('video', 'common.Upload/uploadVideo')
+        ->name('upload_video');
+    
+    // 头像上传
+    Route::post('avatar', 'common.Upload/uploadAvatar')
+        ->name('upload_avatar');
+
+})->middleware(['Auth', 'UploadLimit']);
 
 // ========================================
 // 统计和分析路由 (管理员)
@@ -821,6 +620,46 @@ Route::group('maintenance', function () {
 })->middleware(['Auth', 'SuperAdminAuth']);
 
 // ========================================
+// WebSocket 连接路由
+// ========================================
+
+Route::group('ws', function () {
+    
+    // 骰宝WebSocket连接
+    Route::get('sicbo/:table_id', 'websocket.SicboWebSocket/connect')
+        ->pattern(['table_id' => '\d+'])
+        ->name('sicbo_websocket');
+    
+    // 系统通知WebSocket
+    Route::get('notifications', 'websocket.NotificationWebSocket/connect')
+        ->name('notification_websocket');
+
+})->middleware(['WebSocketAuth']);
+
+// ========================================
+// 系统基础路由
+// ========================================
+
+// 首页路由
+Route::rule('/$', 'index/index', 'GET')
+    ->name('homepage');
+
+// 健康检查
+Route::get('health', function() {
+    return json([
+        'status' => 'ok',
+        'timestamp' => time(),
+        'version' => '2.1.0',
+        'services' => [
+            'sicbo' => 'active',
+            'database' => 'connected',
+            'redis' => 'connected',
+            'websocket' => 'running'
+        ]
+    ]);
+})->name('health_check');
+
+// ========================================
 // 错误处理路由
 // ========================================
 
@@ -839,6 +678,21 @@ Route::miss(function() {
  * 路由说明文档
  * ========================================
  * 
+ * 已移除的路由：
+ * - 百家乐游戏相关路由（bjl/*）
+ * - 支付系统相关路由（payment/*）
+ * - 百家乐露珠数据路由
+ * - 百家乐荷官操作路由
+ * - 百家乐用户投注路由
+ * 
+ * 保留的功能：
+ * - 完整的骰宝游戏系统
+ * - 用户认证和管理
+ * - 系统配置和维护
+ * - 文件上传功能
+ * - 统计分析功能
+ * - WebSocket通信
+ * 
  * 中间件说明：
  * - Auth: 用户身份认证中间件
  * - AdminAuth: 管理员权限认证中间件  
@@ -852,7 +706,6 @@ Route::miss(function() {
  * 
  * 路由命名规范：
  * - 骰宝相关: sicbo_*
- * - 百家乐相关: bjl_*
  * - 用户相关: user_*
  * - 管理相关: admin_*
  * - API相关: api_*
@@ -871,7 +724,7 @@ Route::miss(function() {
  * - DELETE: 删除资源
  * 
  * 版本控制：
- * - 当前版本: v2.0
+ * - 当前版本: v2.1 - 精简版
  * - API版本通过Header传递: X-API-Version
- * - 向后兼容旧版本路由
+ * - 专注于骰宝游戏系统
  */
