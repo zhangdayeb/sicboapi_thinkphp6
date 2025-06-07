@@ -4,14 +4,13 @@ namespace app\websocket\events;
 
 use Workerman\Connection\TcpConnection;
 use app\websocket\ConnectionManager;
-use app\websocket\MessageHandler;
-use think\facade\Db;
-use think\facade\Cache;
+use app\websocket\AuthManager;
 use think\facade\Log;
 
 /**
- * 认证事件处理器
- * 处理用户认证相关的WebSocket消息
+ * 认证事件处理器 - 简化版
+ * 只处理用户认证相关的WebSocket消息
+ * 适配 PHP 7.3 + ThinkPHP6
  */
 class AuthEventHandler
 {
@@ -22,20 +21,32 @@ class AuthEventHandler
      */
     public static function handle(TcpConnection $connection, array $message)
     {
-        $messageType = $message['type'];
+        $messageType = $message['type'] ?? '';
         
-        switch ($messageType) {
-            case 'auth':
-                self::handleAuth($connection, $message);
-                break;
-                
-            case 'logout':
-                self::handleLogout($connection, $message);
-                break;
-                
-            default:
-                MessageHandler::sendError($connection, '未知的认证消息类型');
-                break;
+        try {
+            switch ($messageType) {
+                case 'auth':
+                    self::handleAuth($connection, $message);
+                    break;
+                    
+                case 'logout':
+                    self::handleLogout($connection, $message);
+                    break;
+                    
+                default:
+                    self::sendError($connection, '未知的认证消息类型: ' . $messageType);
+                    break;
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('认证事件处理异常', [
+                'message_type' => $messageType,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            self::sendError($connection, '认证处理失败');
         }
     }
 
@@ -47,61 +58,90 @@ class AuthEventHandler
     private static function handleAuth(TcpConnection $connection, array $message)
     {
         $connectionId = spl_object_hash($connection);
+        $remoteIp = $connection->getRemoteIp();
         
         try {
             // 验证必需参数
-            if (!MessageHandler::validateMessage($message, ['token'])) {
-                MessageHandler::sendError($connection, '认证参数不完整，需要token');
+            if (!self::validateAuthMessage($message)) {
+                self::sendError($connection, '认证参数不完整，需要user_id和token');
                 return;
             }
 
+            $userId = (int)$message['user_id'];
             $token = $message['token'];
-            $userId = $message['user_id'] ?? null;
 
-            // 验证token
-            $userInfo = self::validateToken($token, $userId);
+            // 基础参数验证
+            if ($userId <= 0 || empty($token)) {
+                self::sendError($connection, '用户ID或token无效');
+                return;
+            }
+
+            // 验证用户token
+            $userInfo = AuthManager::validateUserToken($userId, $token);
             
             if (!$userInfo) {
-                MessageHandler::sendError($connection, '认证失败，无效的token');
+                self::sendError($connection, '认证失败，用户ID与token不匹配');
+                
+                Log::warning('用户认证失败', [
+                    'user_id' => $userId,
+                    'token' => substr($token, 0, 10) . '...',
+                    'remote_ip' => $remoteIp,
+                    'connection_id' => $connectionId
+                ]);
+                
                 return;
             }
 
-            $userId = $userInfo['user_id'];
+            // 检查用户状态
+            if (!AuthManager::isUserActive($userId)) {
+                self::sendError($connection, '用户账户已被禁用');
+                
+                Log::warning('禁用用户尝试连接', [
+                    'user_id' => $userId,
+                    'remote_ip' => $remoteIp
+                ]);
+                
+                return;
+            }
 
             // 更新连接管理器中的用户信息
             $success = ConnectionManager::authenticateUser($connectionId, $userId);
             
             if (!$success) {
-                MessageHandler::sendError($connection, '认证处理失败');
+                self::sendError($connection, '认证处理失败，请重试');
                 return;
             }
 
             // 发送认证成功响应
-            MessageHandler::sendSuccess($connection, 'auth_success', [
+            self::sendSuccess($connection, 'auth_success', [
                 'user_id' => $userId,
-                'user_info' => [
-                    'username' => $userInfo['username'],
-                    'nickname' => $userInfo['nickname'] ?? '',
-                    'avatar' => $userInfo['avatar'] ?? '',
-                    'level' => $userInfo['level'] ?? 1,
-                    'balance' => self::getUserBalance($userId)
-                ]
+                'username' => $userInfo['username'] ?? '',
+                'nickname' => $userInfo['nickname'] ?? '',
+                'level' => $userInfo['level'] ?? 1,
+                'auth_time' => time()
             ], '认证成功');
 
-            // 记录认证日志
+            // 记录认证成功日志
             Log::info('用户WebSocket认证成功', [
                 'user_id' => $userId,
+                'username' => $userInfo['username'] ?? '',
                 'connection_id' => $connectionId,
-                'remote_ip' => $connection->getRemoteIp()
+                'remote_ip' => $remoteIp,
+                'user_agent' => $connection->headers['user-agent'] ?? ''
             ]);
 
+            echo "[" . date('Y-m-d H:i:s') . "] 用户认证成功: UserID {$userId}, Connection {$connectionId}\n";
+
         } catch (\Exception $e) {
-            Log::error('认证处理异常: ' . $e->getMessage(), [
+            Log::error('认证处理异常', [
+                'user_id' => $userId ?? 0,
                 'connection_id' => $connectionId,
-                'token' => substr($token ?? '', 0, 10) . '...'
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
             ]);
             
-            MessageHandler::sendError($connection, '认证处理失败');
+            self::sendError($connection, '认证处理异常，请重试');
         }
     }
 
@@ -113,191 +153,263 @@ class AuthEventHandler
     private static function handleLogout(TcpConnection $connection, array $message)
     {
         $connectionId = spl_object_hash($connection);
-        $connectionData = ConnectionManager::getConnection($connectionId);
         
-        if (!$connectionData || !$connectionData['auth_status']) {
-            MessageHandler::sendError($connection, '用户未登录');
-            return;
-        }
-
-        $userId = $connectionData['user_id'];
-        
-        // 移除连接（这会自动处理台桌离开等清理工作）
-        ConnectionManager::removeConnection($connection);
-        
-        // 发送登出成功响应
-        MessageHandler::sendSuccess($connection, 'logout_success', [], '登出成功');
-        
-        // 记录登出日志
-        Log::info('用户WebSocket登出', [
-            'user_id' => $userId,
-            'connection_id' => $connectionId
-        ]);
-    }
-
-    /**
-     * 验证用户token
-     * @param string $token
-     * @param int|null $userId
-     * @return array|null
-     */
-    private static function validateToken($token, $userId = null)
-    {
         try {
-            // 首先从缓存获取
-            $cacheKey = 'user_token_' . md5($token);
-            $userInfo = Cache::get($cacheKey);
+            // 获取连接信息
+            $connectionData = ConnectionManager::getConnection($connectionId);
             
-            if (!$userInfo) {
-                // 从数据库查询
-                $query = Db::table('users')
-                    ->where('status', 1);
-                    
-                // 如果提供了用户ID，同时验证
-                if ($userId) {
-                    $query->where('id', $userId);
-                }
-                
-                // 这里简化token验证，实际项目中应该有专门的token字段
-                // 或者使用JWT等标准token机制
-                if (strlen($token) >= 6) {
-                    // 模拟token验证逻辑
-                    if ($userId) {
-                        $user = $query->where('id', $userId)->find();
-                    } else {
-                        // 如果没有提供用户ID，可以通过其他方式验证token
-                        // 这里简化处理，假设token中包含用户ID信息
-                        $user = $query->where('id', 1)->find(); // 示例：默认用户ID为1
-                    }
-                } else {
-                    return null;
-                }
-                    
-                if ($user) {
-                    $userInfo = [
-                        'user_id' => $user['id'],
-                        'username' => $user['username'],
-                        'nickname' => $user['nickname'] ?? '',
-                        'avatar' => $user['avatar'] ?? '',
-                        'level' => $user['level'] ?? 1,
-                        'status' => $user['status']
-                    ];
-                    
-                    // 缓存用户信息
-                    Cache::set($cacheKey, $userInfo, 7200); // 2小时缓存
-                }
+            if (!$connectionData) {
+                self::sendError($connection, '连接信息不存在');
+                return;
             }
-            
-            return $userInfo;
-            
-        } catch (\Exception $e) {
-            Log::error('Token验证异常: ' . $e->getMessage(), [
-                'token' => substr($token, 0, 10) . '...',
-                'user_id' => $userId
+
+            if (!$connectionData['auth_status']) {
+                self::sendError($connection, '用户未登录');
+                return;
+            }
+
+            $userId = $connectionData['user_id'];
+            $tableId = $connectionData['table_id'];
+
+            // 如果在台桌中，先离开台桌
+            if ($tableId) {
+                ConnectionManager::leaveTable($connectionId, $tableId);
+                echo "[" . date('Y-m-d H:i:s') . "] 用户自动离开台桌: UserID {$userId}, Table {$tableId}\n";
+            }
+
+            // 清除认证状态（保持连接，只清除认证）
+            ConnectionManager::clearAuthentication($connectionId);
+
+            // 发送登出成功响应
+            self::sendSuccess($connection, 'logout_success', [
+                'user_id' => $userId,
+                'logout_time' => time()
+            ], '登出成功');
+
+            // 记录登出日志
+            Log::info('用户WebSocket登出', [
+                'user_id' => $userId,
+                'connection_id' => $connectionId,
+                'was_in_table' => $tableId ? true : false,
+                'table_id' => $tableId
             ]);
-            return null;
+
+            echo "[" . date('Y-m-d H:i:s') . "] 用户登出: UserID {$userId}, Connection {$connectionId}\n";
+
+        } catch (\Exception $e) {
+            Log::error('登出处理异常', [
+                'connection_id' => $connectionId,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            self::sendError($connection, '登出处理失败');
         }
     }
 
     /**
-     * 获取用户余额
-     * @param int $userId
-     * @return float
-     */
-    private static function getUserBalance($userId)
-    {
-        try {
-            // 从缓存获取
-            $cacheKey = "user_balance_{$userId}";
-            $balance = Cache::get($cacheKey);
-            
-            if ($balance === null) {
-                // 从数据库获取
-                $userBalance = Db::table('user_balance')
-                    ->where('user_id', $userId)
-                    ->value('balance');
-                    
-                $balance = $userBalance ?? 0.00;
-                
-                // 缓存5分钟
-                Cache::set($cacheKey, $balance, 300);
-            }
-            
-            return (float)$balance;
-            
-        } catch (\Exception $e) {
-            Log::error('获取用户余额失败: ' . $e->getMessage(), [
-                'user_id' => $userId
-            ]);
-            return 0.00;
-        }
-    }
-
-    /**
-     * 检查用户权限
-     * @param int $userId
-     * @param string $permission
+     * 验证认证消息格式
+     * @param array $message
      * @return bool
      */
-    public static function checkUserPermission($userId, $permission)
+    private static function validateAuthMessage(array $message)
+    {
+        // 检查必需字段
+        $requiredFields = ['user_id', 'token'];
+        
+        foreach ($requiredFields as $field) {
+            if (!isset($message[$field]) || empty($message[$field])) {
+                return false;
+            }
+        }
+
+        // 检查数据类型
+        if (!is_numeric($message['user_id'])) {
+            return false;
+        }
+
+        if (!is_string($message['token'])) {
+            return false;
+        }
+
+        // 检查token长度（基础验证）
+        if (strlen($message['token']) < 6) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * 发送成功响应
+     * @param TcpConnection $connection
+     * @param string $type
+     * @param array $data
+     * @param string $message
+     */
+    private static function sendSuccess(TcpConnection $connection, $type, array $data = [], $message = 'success')
+    {
+        $response = [
+            'type' => $type,
+            'success' => true,
+            'message' => $message,
+            'data' => $data,
+            'timestamp' => time()
+        ];
+
+        self::sendToConnection($connection, $response);
+    }
+
+    /**
+     * 发送错误响应
+     * @param TcpConnection $connection
+     * @param string $message
+     * @param string $type
+     */
+    private static function sendError(TcpConnection $connection, $message, $type = 'auth_failed')
+    {
+        $response = [
+            'type' => $type,
+            'success' => false,
+            'message' => $message,
+            'timestamp' => time()
+        ];
+
+        self::sendToConnection($connection, $response);
+    }
+
+    /**
+     * 发送消息到连接
+     * @param TcpConnection $connection
+     * @param array $data
+     */
+    private static function sendToConnection(TcpConnection $connection, array $data)
     {
         try {
-            // 这里可以实现具体的权限检查逻辑
-            // 简化处理，根据用户等级判断
-            $cacheKey = "user_level_{$userId}";
-            $userLevel = Cache::get($cacheKey);
-            
-            if ($userLevel === null) {
-                $userLevel = Db::table('users')
-                    ->where('id', $userId)
-                    ->value('level') ?? 1;
-                    
-                Cache::set($cacheKey, $userLevel, 1800); // 30分钟缓存
-            }
-            
-            // 权限检查逻辑
-            switch ($permission) {
-                case 'bet':
-                    return $userLevel >= 1; // 所有用户都可以投注
-                case 'admin':
-                    return $userLevel >= 9; // 管理员权限
-                default:
-                    return true;
-            }
-            
+            $message = json_encode($data, JSON_UNESCAPED_UNICODE);
+            $connection->send($message);
         } catch (\Exception $e) {
-            Log::error('权限检查失败: ' . $e->getMessage(), [
-                'user_id' => $userId,
-                'permission' => $permission
+            echo "[ERROR] 发送认证消息失败: " . $e->getMessage() . "\n";
+            Log::error('发送认证消息失败', [
+                'error' => $e->getMessage(),
+                'data' => $data
             ]);
-            return false;
         }
     }
 
     /**
-     * 刷新用户token
+     * 获取连接的用户ID
      * @param TcpConnection $connection
-     * @param array $message
+     * @return int|null
      */
-    public static function refreshToken(TcpConnection $connection, array $message)
+    public static function getConnectionUserId(TcpConnection $connection)
     {
-        // 实现token刷新逻辑
         $connectionId = spl_object_hash($connection);
         $connectionData = ConnectionManager::getConnection($connectionId);
         
-        if (!$connectionData || !$connectionData['auth_status']) {
-            MessageHandler::sendError($connection, '用户未登录');
-            return;
-        }
+        return $connectionData ? $connectionData['user_id'] : null;
+    }
 
-        $userId = $connectionData['user_id'];
+    /**
+     * 检查连接是否已认证
+     * @param TcpConnection $connection
+     * @return bool
+     */
+    public static function isAuthenticated(TcpConnection $connection)
+    {
+        $connectionId = spl_object_hash($connection);
+        $connectionData = ConnectionManager::getConnection($connectionId);
         
-        // 生成新token（实际项目中应该有专门的token生成逻辑）
-        $newToken = 'token_' . $userId . '_' . time() . '_' . uniqid();
+        return $connectionData && $connectionData['auth_status'] === true;
+    }
+
+    /**
+     * 强制用户下线
+     * @param int $userId
+     * @param string $reason
+     * @return int 强制下线的连接数
+     */
+    public static function forceUserLogout($userId, $reason = '管理员操作')
+    {
+        try {
+            $message = [
+                'type' => 'force_logout',
+                'success' => false,
+                'message' => $reason,
+                'timestamp' => time()
+            ];
+
+            // 发送强制下线消息并断开连接
+            $sentCount = ConnectionManager::sendToUser($userId, $message);
+            
+            // 记录强制下线日志
+            Log::warning('强制用户下线', [
+                'user_id' => $userId,
+                'reason' => $reason,
+                'connections_affected' => $sentCount
+            ]);
+
+            return $sentCount;
+
+        } catch (\Exception $e) {
+            Log::error('强制用户下线失败', [
+                'user_id' => $userId,
+                'reason' => $reason,
+                'error' => $e->getMessage()
+            ]);
+            
+            return 0;
+        }
+    }
+
+    /**
+     * 批量强制用户下线
+     * @param array $userIds
+     * @param string $reason
+     * @return array
+     */
+    public static function batchForceLogout(array $userIds, $reason = '批量管理操作')
+    {
+        $results = [];
         
-        MessageHandler::sendSuccess($connection, 'token_refreshed', [
-            'new_token' => $newToken,
-            'expires_in' => 7200 // 2小时
-        ], 'Token已刷新');
+        foreach ($userIds as $userId) {
+            $results[$userId] = self::forceUserLogout($userId, $reason);
+        }
+        
+        return $results;
+    }
+
+    /**
+     * 获取认证统计信息
+     * @return array
+     */
+    public static function getAuthStats()
+    {
+        try {
+            $stats = ConnectionManager::getOnlineStats();
+            
+            return [
+                'total_connections' => $stats['total_connections'] ?? 0,
+                'authenticated_users' => $stats['authenticated_users'] ?? 0,
+                'unauthenticated_connections' => ($stats['total_connections'] ?? 0) - ($stats['authenticated_users'] ?? 0),
+                'authentication_rate' => $stats['total_connections'] > 0 
+                    ? round(($stats['authenticated_users'] / $stats['total_connections']) * 100, 2) 
+                    : 0,
+                'timestamp' => time()
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('获取认证统计失败', ['error' => $e->getMessage()]);
+            
+            return [
+                'total_connections' => 0,
+                'authenticated_users' => 0,
+                'unauthenticated_connections' => 0,
+                'authentication_rate' => 0,
+                'timestamp' => time(),
+                'error' => $e->getMessage()
+            ];
+        }
     }
 }

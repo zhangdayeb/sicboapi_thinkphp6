@@ -2,39 +2,51 @@
 
 namespace app\websocket;
 
+use app\websocket\ConnectionManager;
 use think\facade\Log;
 
 /**
- * 通知发送器
- * 负责各种类型的WebSocket通知发送
+ * 推送发送器 - 5个核心推送
+ * 专注于骰宝游戏必需的实时推送功能
+ * 适配 PHP 7.3 + ThinkPHP6
  */
 class NotificationSender
 {
     /**
-     * 通知类型常量
+     * 推送类型常量
      */
     const TYPE_GAME_START = 'game_start';
-    const TYPE_BETTING_START = 'betting_start';
-    const TYPE_BETTING_END = 'betting_end';
+    const TYPE_COUNTDOWN = 'countdown';
+    const TYPE_GAME_END = 'game_end';
     const TYPE_GAME_RESULT = 'game_result';
-    const TYPE_SETTLEMENT = 'settlement';
-    const TYPE_SYSTEM = 'system';
-    const TYPE_USER = 'user';
-    const TYPE_TABLE = 'table';
-    const TYPE_BET = 'bet';
+    const TYPE_WIN_INFO = 'win_info';
 
     /**
-     * 通知优先级
+     * 推送优先级
      */
-    const PRIORITY_LOW = 1;
     const PRIORITY_NORMAL = 2;
     const PRIORITY_HIGH = 3;
     const PRIORITY_URGENT = 4;
 
     /**
-     * 发送游戏开始通知
-     * @param int $tableId
-     * @param array $gameData
+     * 推送统计数据
+     * @var array
+     */
+    private static $stats = [
+        'total_sent' => 0,
+        'game_start_sent' => 0,
+        'countdown_sent' => 0,
+        'game_end_sent' => 0,
+        'game_result_sent' => 0,
+        'win_info_sent' => 0,
+        'failed_count' => 0,
+        'last_reset' => 0
+    ];
+
+    /**
+     * 推送1: 发送游戏开始通知
+     * @param int $tableId 台桌ID
+     * @param array $gameData 游戏数据
      * @return int 发送成功的连接数
      */
     public static function sendGameStart($tableId, array $gameData)
@@ -42,509 +54,231 @@ class NotificationSender
         try {
             $message = [
                 'type' => self::TYPE_GAME_START,
-                'table_id' => $tableId,
-                'game_number' => $gameData['game_number'],
-                'betting_time' => $gameData['countdown'],
-                'round_number' => $gameData['round_number'] ?? 1,
-                'start_time' => time(),
-                'message' => '新一局游戏开始，请准备投注',
+                'data' => [
+                    'table_id' => $tableId,
+                    'game_number' => $gameData['game_number'] ?? '',
+                    'round_number' => $gameData['round_number'] ?? 1,
+                    'total_time' => $gameData['countdown'] ?? 30,
+                    'start_time' => time(),
+                    'betting_end_time' => $gameData['betting_end_time'] ?? (time() + 30),
+                    'message' => '新一局游戏开始，请准备投注'
+                ],
+                'timestamp' => time(),
                 'priority' => self::PRIORITY_HIGH
             ];
 
             $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
             
-            self::logNotification(self::TYPE_GAME_START, $tableId, $message, $sentCount);
+            // 更新统计
+            self::updateStats('game_start', $sentCount);
+            
+            // 记录日志
+            self::logNotification(self::TYPE_GAME_START, $tableId, $gameData, $sentCount);
             
             return $sentCount;
             
         } catch (\Exception $e) {
-            Log::error('发送游戏开始通知失败: ' . $e->getMessage());
+            self::handleSendError(self::TYPE_GAME_START, $tableId, $e);
             return 0;
         }
     }
 
     /**
-     * 发送投注开始通知
-     * @param int $tableId
-     * @param array $gameData
-     * @return int
+     * 推送2: 发送倒计时更新通知
+     * @param int $tableId 台桌ID
+     * @param array $countdownData 倒计时数据
+     * @return int 发送成功的连接数
      */
-    public static function sendBettingStart($tableId, array $gameData)
+    public static function sendCountdown($tableId, array $countdownData)
+    {
+        try {
+            $remainingTime = $countdownData['remaining_time'] ?? 0;
+            $totalTime = $countdownData['total_time'] ?? 30;
+
+            $message = [
+                'type' => self::TYPE_COUNTDOWN,
+                'data' => [
+                    'table_id' => $tableId,
+                    'game_number' => $countdownData['game_number'] ?? '',
+                    'remaining_time' => $remainingTime,
+                    'total_time' => $totalTime,
+                    'message' => self::getCountdownMessage($remainingTime)
+                ],
+                'timestamp' => time(),
+                'priority' => $remainingTime <= 5 ? self::PRIORITY_HIGH : self::PRIORITY_NORMAL
+            ];
+
+            $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
+            
+            // 更新统计
+            self::updateStats('countdown', $sentCount);
+            
+            // 记录关键倒计时日志
+            if ($remainingTime <= 5 || in_array($remainingTime, [30, 20, 10])) {
+                self::logNotification(self::TYPE_COUNTDOWN, $tableId, $countdownData, $sentCount);
+            }
+            
+            return $sentCount;
+            
+        } catch (\Exception $e) {
+            self::handleSendError(self::TYPE_COUNTDOWN, $tableId, $e);
+            return 0;
+        }
+    }
+
+    /**
+     * 推送3: 发送游戏结束通知
+     * @param int $tableId 台桌ID
+     * @param array $gameData 游戏数据
+     * @return int 发送成功的连接数
+     */
+    public static function sendGameEnd($tableId, array $gameData)
     {
         try {
             $message = [
-                'type' => self::TYPE_BETTING_START,
-                'table_id' => $tableId,
-                'game_number' => $gameData['game_number'],
-                'countdown_time' => $gameData['countdown'],
-                'end_time' => $gameData['betting_end_time'],
-                'message' => '投注开始，倒计时 ' . $gameData['countdown'] . ' 秒',
+                'type' => self::TYPE_GAME_END,
+                'data' => [
+                    'table_id' => $tableId,
+                    'game_number' => $gameData['game_number'] ?? '',
+                    'end_time' => $gameData['end_time'] ?? time(),
+                    'message' => '投注已截止，准备开奖'
+                ],
+                'timestamp' => time(),
                 'priority' => self::PRIORITY_HIGH
             ];
 
             $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
             
-            self::logNotification(self::TYPE_BETTING_START, $tableId, $message, $sentCount);
+            // 更新统计
+            self::updateStats('game_end', $sentCount);
+            
+            // 记录日志
+            self::logNotification(self::TYPE_GAME_END, $tableId, $gameData, $sentCount);
             
             return $sentCount;
             
         } catch (\Exception $e) {
-            Log::error('发送投注开始通知失败: ' . $e->getMessage());
+            self::handleSendError(self::TYPE_GAME_END, $tableId, $e);
             return 0;
         }
     }
 
     /**
-     * 发送投注结束通知
-     * @param int $tableId
-     * @param array $gameData
-     * @return int
-     */
-    public static function sendBettingEnd($tableId, array $gameData)
-    {
-        try {
-            $message = [
-                'type' => self::TYPE_BETTING_END,
-                'table_id' => $tableId,
-                'game_number' => $gameData['game_number'],
-                'end_time' => time(),
-                'message' => '投注已截止，准备开奖',
-                'priority' => self::PRIORITY_HIGH
-            ];
-
-            $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
-            
-            self::logNotification(self::TYPE_BETTING_END, $tableId, $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送投注结束通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送开奖结果通知
-     * @param int $tableId
-     * @param array $gameData
-     * @param array $result
-     * @return int
+     * 推送4: 发送开奖结果通知
+     * @param int $tableId 台桌ID
+     * @param array $gameData 游戏数据
+     * @param array $result 开奖结果
+     * @return int 发送成功的连接数
      */
     public static function sendGameResult($tableId, array $gameData, array $result)
     {
         try {
-            $totalPoints = $result['dice1'] + $result['dice2'] + $result['dice3'];
-            $isBig = $totalPoints >= 11;
-            $isOdd = $totalPoints % 2 == 1;
-            $hasTriple = ($result['dice1'] == $result['dice2']) && ($result['dice2'] == $result['dice3']);
+            // 确保骰子数据有效
+            $dice1 = (int)($result['dice1'] ?? 1);
+            $dice2 = (int)($result['dice2'] ?? 1);
+            $dice3 = (int)($result['dice3'] ?? 1);
+            
+            // 计算基础属性
+            $totalPoints = $dice1 + $dice2 + $dice3;
+            $isBig = $totalPoints >= 11 && $totalPoints <= 17;
+            $isOdd = $totalPoints % 2 === 1;
+            $hasTriple = ($dice1 === $dice2 && $dice2 === $dice3);
             $hasPair = !$hasTriple && (
-                ($result['dice1'] == $result['dice2']) || 
-                ($result['dice2'] == $result['dice3']) || 
-                ($result['dice1'] == $result['dice3'])
+                ($dice1 === $dice2) || ($dice2 === $dice3) || ($dice1 === $dice3)
             );
 
             $message = [
                 'type' => self::TYPE_GAME_RESULT,
-                'table_id' => $tableId,
-                'game_number' => $gameData['game_number'],
-                'result' => [
-                    'dice1' => $result['dice1'],
-                    'dice2' => $result['dice2'],
-                    'dice3' => $result['dice3'],
-                    'total_points' => $totalPoints,
-                    'is_big' => $isBig,
-                    'is_odd' => $isOdd,
-                    'has_triple' => $hasTriple,
-                    'has_pair' => $hasPair,
-                    'triple_number' => $hasTriple ? $result['dice1'] : null
+                'data' => [
+                    'table_id' => $tableId,
+                    'game_number' => $gameData['game_number'] ?? '',
+                    'round_number' => $gameData['round_number'] ?? 1,
+                    'result' => [
+                        'dice1' => $dice1,
+                        'dice2' => $dice2,
+                        'dice3' => $dice3,
+                        'total_points' => $totalPoints,
+                        'is_big' => $isBig,
+                        'is_small' => !$isBig,
+                        'is_odd' => $isOdd,
+                        'is_even' => !$isOdd,
+                        'has_triple' => $hasTriple,
+                        'triple_number' => $hasTriple ? $dice1 : null,
+                        'has_pair' => $hasPair,
+                        'winning_bets' => $result['winning_bets'] ?? []
+                    ],
+                    'result_time' => $result['result_time'] ?? time(),
+                    'message' => self::formatResultMessage($dice1, $dice2, $dice3, $totalPoints, $isBig, $isOdd, $hasTriple)
                 ],
-                'result_time' => time(),
-                'message' => self::formatResultMessage($result),
+                'timestamp' => time(),
                 'priority' => self::PRIORITY_URGENT
             ];
 
             $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
             
-            self::logNotification(self::TYPE_GAME_RESULT, $tableId, $message, $sentCount);
+            // 更新统计
+            self::updateStats('game_result', $sentCount);
+            
+            // 记录日志
+            self::logNotification(self::TYPE_GAME_RESULT, $tableId, array_merge($gameData, $result), $sentCount);
             
             return $sentCount;
             
         } catch (\Exception $e) {
-            Log::error('发送开奖结果通知失败: ' . $e->getMessage());
+            self::handleSendError(self::TYPE_GAME_RESULT, $tableId, $e);
             return 0;
         }
     }
 
     /**
-     * 发送结算通知
-     * @param int $tableId
-     * @param string $gameNumber
-     * @param array $settlementData
-     * @return int
+     * 推送5: 发送个人中奖信息通知
+     * @param int $userId 用户ID
+     * @param array $winData 中奖数据
+     * @return int 发送成功的连接数
      */
-    public static function sendSettlement($tableId, $gameNumber, array $settlementData)
+    public static function sendWinInfo($userId, array $winData)
     {
         try {
-            $message = [
-                'type' => self::TYPE_SETTLEMENT,
-                'table_id' => $tableId,
-                'game_number' => $gameNumber,
-                'settlement' => $settlementData,
-                'settle_time' => time(),
-                'message' => '本局结算完成',
-                'priority' => self::PRIORITY_HIGH
-            ];
-
-            $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
+            $winAmount = (float)($winData['win_amount'] ?? 0);
             
-            self::logNotification(self::TYPE_SETTLEMENT, $tableId, $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送结算通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送个人结算通知
-     * @param int $userId
-     * @param array $personalSettlement
-     * @return int
-     */
-    public static function sendPersonalSettlement($userId, array $personalSettlement)
-    {
-        try {
-            $message = [
-                'type' => 'personal_settlement',
-                'settlement' => $personalSettlement,
-                'settle_time' => time(),
-                'message' => self::formatPersonalSettlementMessage($personalSettlement),
-                'priority' => self::PRIORITY_HIGH
-            ];
-
-            $sentCount = ConnectionManager::sendToUser($userId, $message);
-            
-            self::logNotification('personal_settlement', $userId, $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送个人结算通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送系统通知
-     * @param string $title
-     * @param string $content
-     * @param array $options
-     * @return int
-     */
-    public static function sendSystemNotification($title, $content, array $options = [])
-    {
-        try {
-            $message = [
-                'type' => self::TYPE_SYSTEM,
-                'title' => $title,
-                'content' => $content,
-                'level' => $options['level'] ?? 'info',
-                'send_time' => time(),
-                'expire_time' => $options['expire_time'] ?? null,
-                'require_confirm' => $options['require_confirm'] ?? false,
-                'priority' => $options['priority'] ?? self::PRIORITY_NORMAL
-            ];
-
-            // 如果指定了目标用户
-            if (isset($options['target_users']) && is_array($options['target_users'])) {
-                $sentCount = 0;
-                foreach ($options['target_users'] as $userId) {
-                    $sentCount += ConnectionManager::sendToUser($userId, $message);
-                }
-            } else {
-                // 全平台广播
-                $sentCount = ConnectionManager::broadcastAll($message);
+            if ($winAmount <= 0) {
+                return 0; // 没有中奖，不发送
             }
-            
-            self::logNotification(self::TYPE_SYSTEM, 'all', $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送系统通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
 
-    /**
-     * 发送用户通知
-     * @param int $userId
-     * @param string $title
-     * @param string $content
-     * @param array $options
-     * @return int
-     */
-    public static function sendUserNotification($userId, $title, $content, array $options = [])
-    {
-        try {
             $message = [
-                'type' => self::TYPE_USER,
-                'title' => $title,
-                'content' => $content,
-                'level' => $options['level'] ?? 'info',
-                'send_time' => time(),
-                'auto_close' => $options['auto_close'] ?? 5000,
-                'require_confirm' => $options['require_confirm'] ?? false,
-                'priority' => $options['priority'] ?? self::PRIORITY_NORMAL
+                'type' => self::TYPE_WIN_INFO,
+                'data' => [
+                    'user_id' => $userId,
+                    'game_number' => $winData['game_number'] ?? '',
+                    'win_amount' => $winAmount,
+                    'win_bets' => $winData['win_bets'] ?? [],
+                    'new_balance' => $winData['new_balance'] ?? 0,
+                    'message' => self::formatWinMessage($winAmount, $winData['win_bets'] ?? [])
+                ],
+                'timestamp' => time(),
+                'priority' => $winAmount >= 1000 ? self::PRIORITY_URGENT : self::PRIORITY_HIGH
             ];
 
             $sentCount = ConnectionManager::sendToUser($userId, $message);
             
-            self::logNotification(self::TYPE_USER, $userId, $message, $sentCount);
+            // 更新统计
+            self::updateStats('win_info', $sentCount);
+            
+            // 记录中奖日志
+            self::logWinNotification($userId, $winData, $sentCount);
             
             return $sentCount;
             
         } catch (\Exception $e) {
-            Log::error('发送用户通知失败: ' . $e->getMessage());
+            self::handleSendError(self::TYPE_WIN_INFO, $userId, $e);
             return 0;
         }
     }
 
     /**
-     * 发送台桌通知
-     * @param int $tableId
-     * @param string $title
-     * @param string $content
-     * @param array $options
-     * @return int
-     */
-    public static function sendTableNotification($tableId, $title, $content, array $options = [])
-    {
-        try {
-            $message = [
-                'type' => self::TYPE_TABLE,
-                'table_id' => $tableId,
-                'title' => $title,
-                'content' => $content,
-                'level' => $options['level'] ?? 'info',
-                'send_time' => time(),
-                'priority' => $options['priority'] ?? self::PRIORITY_NORMAL
-            ];
-
-            $excludeConnections = $options['exclude_connections'] ?? [];
-            $sentCount = ConnectionManager::broadcastToTable($tableId, $message, $excludeConnections);
-            
-            self::logNotification(self::TYPE_TABLE, $tableId, $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送台桌通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送投注相关通知
-     * @param int $tableId
-     * @param string $eventType
-     * @param array $data
-     * @return int
-     */
-    public static function sendBetNotification($tableId, $eventType, array $data)
-    {
-        try {
-            $message = [
-                'type' => self::TYPE_BET,
-                'event_type' => $eventType,
-                'table_id' => $tableId,
-                'data' => $data,
-                'timestamp' => time(),
-                'priority' => self::PRIORITY_NORMAL
-            ];
-
-            $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
-            
-            self::logNotification(self::TYPE_BET, $tableId, $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送投注通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送倒计时更新
-     * @param int $tableId
-     * @param int $countdown
-     * @param string $status
-     * @return int
-     */
-    public static function sendCountdownUpdate($tableId, $countdown, $status)
-    {
-        try {
-            $message = [
-                'type' => 'countdown_update',
-                'table_id' => $tableId,
-                'countdown' => $countdown,
-                'status' => $status,
-                'timestamp' => time(),
-                'priority' => self::PRIORITY_NORMAL
-            ];
-
-            $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
-            
-            // 倒计时更新不记录详细日志，避免日志过多
-            if ($countdown % 10 == 0 || $countdown <= 5) {
-                self::logNotification('countdown_update', $tableId, ['countdown' => $countdown], $sentCount);
-            }
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送倒计时更新失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送大奖通知
-     * @param int $tableId
-     * @param array $winData
-     * @return int
-     */
-    public static function sendBigWinNotification($tableId, array $winData)
-    {
-        try {
-            $winAmount = $winData['win_amount'] ?? 0;
-            
-            $message = [
-                'type' => 'big_win',
-                'table_id' => $tableId,
-                'win_amount' => $winAmount,
-                'game_number' => $winData['game_number'] ?? '',
-                'message' => "恭喜有玩家获得大奖 ¥{$winAmount}！",
-                'animation' => 'fireworks',
-                'priority' => self::PRIORITY_URGENT
-            ];
-
-            $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
-            
-            self::logNotification('big_win', $tableId, $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送大奖通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送维护通知
-     * @param string $title
-     * @param string $content
-     * @param array $options
-     * @return int
-     */
-    public static function sendMaintenanceNotification($title, $content, array $options = [])
-    {
-        try {
-            $message = [
-                'type' => 'maintenance',
-                'title' => $title,
-                'content' => $content,
-                'start_time' => $options['start_time'] ?? time(),
-                'end_time' => $options['end_time'] ?? null,
-                'affected_tables' => $options['affected_tables'] ?? null,
-                'require_confirm' => true,
-                'priority' => self::PRIORITY_URGENT
-            ];
-
-            $sentCount = ConnectionManager::broadcastAll($message);
-            
-            self::logNotification('maintenance', 'all', $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送维护通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送余额更新通知
-     * @param int $userId
-     * @param array $balanceData
-     * @return int
-     */
-    public static function sendBalanceUpdate($userId, array $balanceData)
-    {
-        try {
-            $message = [
-                'type' => 'balance_update',
-                'user_id' => $userId,
-                'balance' => $balanceData['balance'],
-                'change_amount' => $balanceData['change_amount'] ?? 0,
-                'change_type' => $balanceData['change_type'] ?? '',
-                'reason' => $balanceData['reason'] ?? '',
-                'timestamp' => time(),
-                'priority' => self::PRIORITY_HIGH
-            ];
-
-            $sentCount = ConnectionManager::sendToUser($userId, $message);
-            
-            self::logNotification('balance_update', $userId, $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送余额更新通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送连胜/连败通知
-     * @param int $tableId
-     * @param array $streakData
-     * @return int
-     */
-    public static function sendStreakNotification($tableId, array $streakData)
-    {
-        try {
-            $message = [
-                'type' => 'streak_notification',
-                'table_id' => $tableId,
-                'streak_type' => $streakData['type'], // 'big', 'small', 'odd', 'even'
-                'streak_count' => $streakData['count'],
-                'message' => self::formatStreakMessage($streakData),
-                'timestamp' => time(),
-                'priority' => self::PRIORITY_NORMAL
-            ];
-
-            $sentCount = ConnectionManager::broadcastToTable($tableId, $message);
-            
-            self::logNotification('streak_notification', $tableId, $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送连胜通知失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 批量发送通知
-     * @param array $notifications
-     * @return array
+     * 批量发送推送（辅助方法）
+     * @param array $notifications 推送数据数组
+     * @return array 发送结果
      */
     public static function batchSend(array $notifications)
     {
@@ -559,21 +293,28 @@ class NotificationSender
                 $sentCount = 0;
                 
                 switch ($type) {
-                    case 'user':
-                        if (is_numeric($target)) {
-                            $sentCount = ConnectionManager::sendToUser($target, $data);
-                        }
+                    case self::TYPE_GAME_START:
+                        $sentCount = self::sendGameStart($target, $data);
                         break;
                         
-                    case 'table':
-                        if (is_numeric($target)) {
-                            $sentCount = ConnectionManager::broadcastToTable($target, $data);
-                        }
+                    case self::TYPE_COUNTDOWN:
+                        $sentCount = self::sendCountdown($target, $data);
                         break;
                         
-                    case 'all':
-                        $sentCount = ConnectionManager::broadcastAll($data);
+                    case self::TYPE_GAME_END:
+                        $sentCount = self::sendGameEnd($target, $data);
                         break;
+                        
+                    case self::TYPE_GAME_RESULT:
+                        $sentCount = self::sendGameResult($target, $data, $data['result'] ?? []);
+                        break;
+                        
+                    case self::TYPE_WIN_INFO:
+                        $sentCount = self::sendWinInfo($target, $data);
+                        break;
+                        
+                    default:
+                        throw new \Exception('Unknown notification type: ' . $type);
                 }
                 
                 $results[$index] = [
@@ -587,9 +328,10 @@ class NotificationSender
                     'error' => $e->getMessage()
                 ];
                 
-                Log::error('批量发送通知失败: ' . $e->getMessage(), [
+                Log::error('批量发送推送失败', [
                     'index' => $index,
-                    'notification' => $notification
+                    'notification' => $notification,
+                    'error' => $e->getMessage()
                 ]);
             }
         }
@@ -599,223 +341,247 @@ class NotificationSender
 
     /**
      * 格式化开奖结果消息
-     * @param array $result
+     * @param int $dice1
+     * @param int $dice2
+     * @param int $dice3
+     * @param int $totalPoints
+     * @param bool $isBig
+     * @param bool $isOdd
+     * @param bool $hasTriple
      * @return string
      */
-    private static function formatResultMessage(array $result)
+    private static function formatResultMessage($dice1, $dice2, $dice3, $totalPoints, $isBig, $isOdd, $hasTriple)
     {
-        $dice = "{$result['dice1']}-{$result['dice2']}-{$result['dice3']}";
-        $total = $result['dice1'] + $result['dice2'] + $result['dice3'];
-        $bigSmall = $total >= 11 ? '大' : '小';
-        $oddEven = $total % 2 == 1 ? '单' : '双';
+        $diceText = "{$dice1}-{$dice2}-{$dice3}";
+        $bigSmall = $isBig ? '大' : '小';
+        $oddEven = $isOdd ? '单' : '双';
         
-        $message = "开奖结果：{$dice}，总点数：{$total}，{$bigSmall}/{$oddEven}";
+        $message = "开奖结果：{$diceText}，总点数：{$totalPoints}，{$bigSmall}/{$oddEven}";
         
-        // 检查特殊结果
-        if (($result['dice1'] == $result['dice2']) && ($result['dice2'] == $result['dice3'])) {
-            $message .= "，三同号 {$result['dice1']}";
-        } elseif (($result['dice1'] == $result['dice2']) || ($result['dice2'] == $result['dice3']) || ($result['dice1'] == $result['dice3'])) {
-            $message .= "，包含对子";
+        if ($hasTriple) {
+            $message .= "，三同号 {$dice1}";
         }
         
         return $message;
     }
 
     /**
-     * 格式化个人结算消息
-     * @param array $settlement
+     * 格式化中奖消息
+     * @param float $winAmount
+     * @param array $winBets
      * @return string
      */
-    private static function formatPersonalSettlementMessage(array $settlement)
+    private static function formatWinMessage($winAmount, array $winBets)
     {
-        $winAmount = $settlement['total_win_amount'] ?? 0;
-        $betAmount = $settlement['total_bet_amount'] ?? 0;
-        $winCount = $settlement['win_count'] ?? 0;
-        $betCount = $settlement['bet_count'] ?? 0;
+        $betCount = count($winBets);
         
-        if ($winAmount > 0) {
-            $profit = $winAmount - $betAmount;
-            $profitText = $profit > 0 ? "盈利 ¥{$profit}" : "亏损 ¥" . abs($profit);
-            return "结算完成：投注 {$betCount} 笔，中奖 {$winCount} 笔，{$profitText}";
+        if ($winAmount >= 10000) {
+            return "恭喜您！大奖中奖 ¥{$winAmount}，{$betCount}项投注中奖！";
+        } elseif ($winAmount >= 1000) {
+            return "恭喜中奖 ¥{$winAmount}，{$betCount}项投注中奖！";
         } else {
-            return "结算完成：投注 {$betCount} 笔，未中奖";
+            return "中奖 ¥{$winAmount}，{$betCount}项投注中奖";
         }
     }
 
     /**
-     * 格式化连胜消息
-     * @param array $streakData
+     * 格式化倒计时消息
+     * @param int $remainingTime
      * @return string
      */
-    private static function formatStreakMessage(array $streakData)
+    private static function getCountdownMessage($remainingTime)
     {
-        $type = $streakData['type'];
-        $count = $streakData['count'];
-        
-        $typeNames = [
-            'big' => '大',
-            'small' => '小',
-            'odd' => '单',
-            'even' => '双'
-        ];
-        
-        $typeName = $typeNames[$type] ?? $type;
-        
-        return "连续 {$count} 局开 {$typeName}！";
+        if ($remainingTime <= 0) {
+            return '投注时间结束';
+        } elseif ($remainingTime <= 5) {
+            return "还有 {$remainingTime} 秒";
+        } elseif ($remainingTime <= 10) {
+            return "倒计时 {$remainingTime} 秒";
+        } else {
+            return "剩余 {$remainingTime} 秒";
+        }
     }
 
     /**
-     * 记录通知日志
+     * 更新推送统计
      * @param string $type
-     * @param mixed $target
-     * @param array $message
      * @param int $sentCount
      */
-    private static function logNotification($type, $target, array $message, $sentCount)
+    private static function updateStats($type, $sentCount)
     {
-        try {
-            Log::info('WebSocket通知发送', [
-                'type' => $type,
-                'target' => $target,
-                'message_type' => $message['type'] ?? 'unknown',
-                'sent_count' => $sentCount,
-                'priority' => $message['priority'] ?? self::PRIORITY_NORMAL,
-                'timestamp' => time()
-            ]);
-            
-        } catch (\Exception $e) {
-            // 忽略日志记录错误
+        if (self::$stats['last_reset'] === 0) {
+            self::$stats['last_reset'] = time();
+        }
+
+        self::$stats['total_sent'] += $sentCount;
+        self::$stats[$type . '_sent'] += $sentCount;
+        
+        if ($sentCount === 0) {
+            self::$stats['failed_count']++;
         }
     }
 
     /**
-     * 获取通知统计信息
+     * 记录推送日志
+     * @param string $type
+     * @param int $target
+     * @param array $data
+     * @param int $sentCount
+     */
+    private static function logNotification($type, $target, array $data, $sentCount)
+    {
+        Log::info('WebSocket推送发送', [
+            'type' => $type,
+            'target' => $target,
+            'sent_count' => $sentCount,
+            'data' => $data,
+            'timestamp' => time()
+        ]);
+    }
+
+    /**
+     * 记录中奖推送日志
+     * @param int $userId
+     * @param array $winData
+     * @param int $sentCount
+     */
+    private static function logWinNotification($userId, array $winData, $sentCount)
+    {
+        Log::info('中奖信息推送', [
+            'user_id' => $userId,
+            'win_amount' => $winData['win_amount'] ?? 0,
+            'game_number' => $winData['game_number'] ?? '',
+            'win_bets_count' => count($winData['win_bets'] ?? []),
+            'sent_count' => $sentCount,
+            'timestamp' => time()
+        ]);
+    }
+
+    /**
+     * 处理发送错误
+     * @param string $type
+     * @param mixed $target
+     * @param \Exception $e
+     */
+    private static function handleSendError($type, $target, \Exception $e)
+    {
+        self::$stats['failed_count']++;
+        
+        Log::error('推送发送失败', [
+            'type' => $type,
+            'target' => $target,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
+        ]);
+    }
+
+    /**
+     * 获取推送统计信息
      * @return array
      */
-    public static function getNotificationStats()
+    public static function getStats()
     {
-        try {
-            $onlineStats = ConnectionManager::getOnlineStats();
-            
-            return [
-                'online_connections' => $onlineStats['total_connections'] ?? 0,
-                'active_tables' => $onlineStats['active_tables'] ?? 0,
-                'authenticated_users' => $onlineStats['authenticated_users'] ?? 0,
-                'update_time' => time()
-            ];
-            
-        } catch (\Exception $e) {
-            Log::error('获取通知统计失败: ' . $e->getMessage());
-            return [
-                'online_connections' => 0,
-                'active_tables' => 0,
-                'authenticated_users' => 0,
-                'update_time' => time()
-            ];
-        }
+        $runtime = time() - self::$stats['last_reset'];
+        
+        return array_merge(self::$stats, [
+            'runtime_seconds' => $runtime,
+            'avg_per_minute' => $runtime > 0 ? round((self::$stats['total_sent'] / $runtime) * 60, 2) : 0,
+            'success_rate' => self::$stats['total_sent'] > 0 
+                ? round(((self::$stats['total_sent'] - self::$stats['failed_count']) / self::$stats['total_sent']) * 100, 2) 
+                : 100,
+            'update_time' => time()
+        ]);
     }
 
     /**
-     * 测试连接
+     * 重置推送统计
+     */
+    public static function resetStats()
+    {
+        self::$stats = [
+            'total_sent' => 0,
+            'game_start_sent' => 0,
+            'countdown_sent' => 0,
+            'game_end_sent' => 0,
+            'game_result_sent' => 0,
+            'win_info_sent' => 0,
+            'failed_count' => 0,
+            'last_reset' => time()
+        ];
+        
+        Log::info('推送统计已重置');
+    }
+
+    /**
+     * 获取推送类型列表
+     * @return array
+     */
+    public static function getNotificationTypes()
+    {
+        return [
+            self::TYPE_GAME_START => '游戏开始',
+            self::TYPE_COUNTDOWN => '倒计时更新',
+            self::TYPE_GAME_END => '游戏结束',
+            self::TYPE_GAME_RESULT => '开奖结果',
+            self::TYPE_WIN_INFO => '中奖信息'
+        ];
+    }
+
+    /**
+     * 测试推送功能
      * @param int $tableId
      * @return array
      */
-    public static function testConnection($tableId = null)
+    public static function testNotifications($tableId)
     {
+        $results = [];
+        
         try {
-            $testMessage = [
-                'type' => 'connection_test',
-                'message' => 'WebSocket连接测试',
-                'timestamp' => time(),
-                'test_id' => uniqid(),
-                'priority' => self::PRIORITY_LOW
-            ];
-
-            if ($tableId) {
-                $sentCount = ConnectionManager::broadcastToTable($tableId, $testMessage);
-                $target = "table_{$tableId}";
-            } else {
-                $sentCount = ConnectionManager::broadcastAll($testMessage);
-                $target = 'all';
-            }
-
-            return [
-                'success' => true,
-                'target' => $target,
-                'sent_count' => $sentCount,
-                'message' => '连接测试完成',
-                'test_id' => $testMessage['test_id']
-            ];
+            // 测试游戏开始推送
+            $results['game_start'] = self::sendGameStart($tableId, [
+                'game_number' => 'TEST_' . time(),
+                'round_number' => 1,
+                'countdown' => 30
+            ]);
+            
+            // 测试倒计时推送
+            $results['countdown'] = self::sendCountdown($tableId, [
+                'game_number' => 'TEST_' . time(),
+                'remaining_time' => 10,
+                'total_time' => 30
+            ]);
+            
+            // 测试游戏结束推送
+            $results['game_end'] = self::sendGameEnd($tableId, [
+                'game_number' => 'TEST_' . time(),
+                'end_time' => time()
+            ]);
+            
+            // 测试开奖结果推送
+            $results['game_result'] = self::sendGameResult($tableId, [
+                'game_number' => 'TEST_' . time(),
+                'round_number' => 1
+            ], [
+                'dice1' => 3,
+                'dice2' => 4,
+                'dice3' => 5,
+                'winning_bets' => ['big', 'even']
+            ]);
+            
+            Log::info('推送功能测试完成', [
+                'table_id' => $tableId,
+                'results' => $results
+            ]);
             
         } catch (\Exception $e) {
-            Log::error('连接测试失败: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => $e->getMessage(),
-                'message' => '连接测试失败'
-            ];
+            $results['error'] = $e->getMessage();
+            Log::error('推送功能测试失败', [
+                'table_id' => $tableId,
+                'error' => $e->getMessage()
+            ]);
         }
-    }
-
-    /**
-     * 发送心跳检测消息
-     * @param int|null $tableId 指定台桌ID，null表示全平台
-     * @return int
-     */
-    public static function sendHeartbeat($tableId = null)
-    {
-        try {
-            $heartbeatMessage = [
-                'type' => 'heartbeat',
-                'timestamp' => time(),
-                'server_status' => 'running',
-                'priority' => self::PRIORITY_LOW
-            ];
-
-            if ($tableId) {
-                $sentCount = ConnectionManager::broadcastToTable($tableId, $heartbeatMessage);
-            } else {
-                $sentCount = ConnectionManager::broadcastAll($heartbeatMessage);
-            }
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送心跳检测失败: ' . $e->getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * 发送紧急通知
-     * @param string $title
-     * @param string $content
-     * @param array $options
-     * @return int
-     */
-    public static function sendEmergencyNotification($title, $content, array $options = [])
-    {
-        try {
-            $message = [
-                'type' => 'emergency',
-                'title' => $title,
-                'content' => $content,
-                'level' => 'urgent',
-                'require_confirm' => true,
-                'auto_close' => false,
-                'send_time' => time(),
-                'priority' => self::PRIORITY_URGENT
-            ];
-
-            $sentCount = ConnectionManager::broadcastAll($message);
-            
-            self::logNotification('emergency', 'all', $message, $sentCount);
-            
-            return $sentCount;
-            
-        } catch (\Exception $e) {
-            Log::error('发送紧急通知失败: ' . $e->getMessage());
-            return 0;
-        }
+        
+        return $results;
     }
 }
