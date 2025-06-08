@@ -31,12 +31,8 @@ class WorkerOpenPaiService
      * @return array 包含开牌结果、牌面信息和闪烁效果的数组
      * 
      * 数据格式说明：
-     * - 输入: JSON字符串，如 {"1":"13|h","2":"1|r","3":"0|0",...}
-     * - 花色: h=红桃, r=黑桃, m=梅花, f=方块
-     * - 牌值: 1-13 (1=A, 11=J, 12=Q, 13=K)
-     * - 位置: 1,2,3=庄家牌, 4,5,6=闲家牌
      */
-    public function get_pai_info_bjl($pai_data)
+    public function get_pai_info_sicbo($pai_data)
     {
         // 解析JSON数据
         $pai_data = $pai_info = json_decode($pai_data, true);
@@ -46,23 +42,7 @@ class WorkerOpenPaiService
         
         // 遍历处理每张牌的数据
         foreach ($pai_info as $key => $value) {
-            // 跳过空牌（0|0表示没有牌）
-            if ($value == '0|0') {
-                unset($pai_info[$key]);
-                continue;
-            }
-            
-            // 分离牌值和花色 格式：牌值|花色
-            $pai = explode('|', $value);
-            
-            // 根据位置分配到庄家或闲家
-            if ($key == 1 || $key == 2 || $key == 3) {
-                // 位置1,2,3为庄家的牌
-                $info['zhuang'][$key] = $pai[1] . $pai[0] . '.png';
-            } else {
-                // 位置4,5,6为闲家的牌  
-                $info['xian'][$key] = $pai[1] . $pai[0] . '.png';
-            }
+            $info['dice'.$key] = $value;
         }
         
         // 计算游戏结果
@@ -149,73 +129,5 @@ class WorkerOpenPaiService
         return $info;
     }
     
-    // ========================================
-    // 以下为被注释掉的历史代码，保留作为参考
-    // ========================================
-    
-    /*
-    // 台桌露珠列表 - 已迁移到其他服务
-    public function lu_zhu_list($table_id = 1, $game_type = 3)
-    {
-        //骰宝台桌
-        $info = Luzhu::table_lu_zhu_list($table_id, $game_type);
-        return $info;
-    }
-    
-    // 获取台桌列表 - 已迁移到其他服务
-    public function get_table_list($game_type = 3)
-    {
-        //每个游戏的台桌列表。不存在就是所有台桌
-        $map = [];
-        if ($game_type > 0) $map[] = ['game_type','=',$game_type];
-        
-        $list = Table::page_repeat($map, 'list_order asc');
-        $list = $list->hidden(['game_play_staus', 'is_dianji', 'is_weitou', 'is_diantou', 'list_order']);
-        
-        // 计算台桌倒计时
-        if (empty($list)) return $list;
-        foreach ($list as $key => &$value) {
-            // 获取视频地址
-            $value = Table::table_opening_count_down($value);
-            $value->p = rand(10, 40) . '.' . rand(1, 9) . 'k/' . rand(10, 40);
-            $value->t = rand(10, 40) . '.' . rand(1, 9) . 'k/' . rand(10, 40);
-            $value->b = rand(10, 40) . '.' . rand(1, 9) . 'k/' . rand(10, 40);
-        }
-        return $list;
-    }
-    
-    // 露珠和台桌信息统一获取接口 - 已废弃
-    public function lu_zhu_and_table_info(array $data)
-    {   
-        // 获取露珠信息
-        if ($data['game_table_type'] == 'luzhu_list'){
-            return $this->lu_zhu_list($data['table_id']);
-        }
-        // 获取台桌列表
-        if ($data['game_table_type'] == 'table_list'){
-            return $this->get_table_list($data['game_type']);
-        }
-        return [];
-    }
-    */
 }
 
-/**
- * ========================================
- * 类使用说明
- * ========================================
- * 
- * 1. get_pai_info_bjl() 方法：
- *    - 用于Workerman推送开牌结果给客户端
- *    - 处理牌面数据格式转换
- *    - 计算游戏胜负结果
- * 
- * 2. get_table_info() 方法：
- *    - 用于客户端连接时获取台桌状态
- *    - 提供实时的倒计时信息
- *    - 返回用户个性化的游戏状态
- * 
- * 数据流向：
- * 客户端连接 -> get_table_info() -> 返回台桌信息
- * 荷官开牌 -> get_pai_info_bjl() -> 推送开牌结果
- */

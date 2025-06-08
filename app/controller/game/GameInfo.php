@@ -18,7 +18,7 @@ class GameInfo extends Base
         if ($find->game_type != 3) show([], config('ToConfig.http_code.error'), '骰宝游戏类型不正确');
         //获取台桌开牌信息
         $service = new WorkerOpenPaiService();
-        $poker = $service->get_pai_info_bjl($find->result_pai);
+        $poker = $service->get_pai_info_sicbo($find->result_pai);
         show($poker);
     }
 }

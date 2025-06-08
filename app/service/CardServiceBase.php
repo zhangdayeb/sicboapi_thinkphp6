@@ -60,18 +60,8 @@ class CardServiceBase
         
         // 根据游戏类型调用相应的处理方法
         switch ($game_type) {
-            case 3: // 骰宝游戏
-                return $service->get_pai_info_bjl($pai_data);
-                break;
-                
-            case 2: // 龙虎游戏（待实现）
-                // TODO: 实现龙虎游戏开牌信息处理
-                // return $service->get_pai_info_lh($pai_data);
-                break;
-                
-            case 1: // 牛牛游戏（待实现）
-                // TODO: 实现牛牛游戏开牌信息处理
-                // return $service->get_pai_info_nn($pai_data);
+            case 9: // 骰宝游戏
+                return $service->get_pai_info_sicbo($pai_data);
                 break;
                 
             default:
@@ -149,28 +139,3 @@ class CardServiceBase
     }
 }
 
-/**
- * ========================================
- * 类使用说明和最佳实践
- * ========================================
- * 
- * 1. 数据流向：
- *    荷官开牌 -> 结算服务 -> Redis缓存 -> 本服务读取 -> 推送给客户端
- * 
- * 2. Redis缓存策略：
- *    - 开牌数据：存储5秒，用于实时推送
- *    - 派彩数据：存储5秒，用户领取后删除
- *    - 避免数据长期占用内存
- * 
- * 3. 错误处理：
- *    - 缓存未命中返回false，不抛出异常
- *    - 上层调用需要检查返回值
- * 
- * 4. 扩展说明：
- *    - 新增游戏类型时，在get_pai_info()中添加case分支
- *    - 每种游戏类型需要对应的解析方法
- * 
- * 5. 性能优化：
- *    - Redis读取速度快，适合高并发场景
- *    - 数据库写入异步处理，不影响用户体验
- */

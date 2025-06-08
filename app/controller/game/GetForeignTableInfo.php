@@ -140,25 +140,8 @@ class GetForeignTableInfo extends BaseController
 		    // 保持不变 这样做到 自动更新 露珠
 		}
 
-        // 需要兼容 龙7 熊8 大小老虎 69 幸运6 
+        // 暂时不知道统计什么 先空着
         $returnData = array();
-        $returnData_zhuang_1 = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '1|%')->where($map)->order('id asc')->count();
-        $returnData_zhuang_4 = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '4|%')->where($map)->order('id asc')->count();
-        $returnData_zhuang_6 = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '6|%')->where($map)->order('id asc')->count();
-        $returnData_zhuang_7 = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '7|%')->where($map)->order('id asc')->count();
-        $returnData_zhuang_9 = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '9|%')->where($map)->order('id asc')->count();
-		$returnData['zhuang'] = $returnData_zhuang_1 + $returnData_zhuang_4 + $returnData_zhuang_6 + $returnData_zhuang_7 + $returnData_zhuang_9;
-
-        $returnData_xian_2 = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '2|%')->where($map)->order('id asc')->count();
-        $returnData_xian_8 = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '8|%')->where($map)->order('id asc')->count();
-        $returnData['xian'] = $returnData_xian_2 + $returnData_xian_8;
-
-        $returnData['he'] = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '3|%')->where($map)->order('id asc')->count();
-        $returnData['zhuangDui'] = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '%|1')->where($map)->order('id asc')->count();
-        $returnData['xianDui'] = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '%|2')->where($map)->order('id asc')->count();
-        $returnData['zhuangXianDui'] = Luzhu::whereTime('create_time','>=', date('Y-m-d H:i:s',$startTime))->where('result', 'like', '%|3')->where($map)->order('id asc')->count();
-        $returnData['zhuangDui'] += $returnData['zhuangXianDui'];
-        $returnData['xianDui'] += $returnData['zhuangXianDui'];
         // 返回数据
         show($returnData, 1);
     }
@@ -232,63 +215,7 @@ class GetForeignTableInfo extends BaseController
     }
     
     
-    //测试 露珠缓存
-    public function set_post_data_test(): string
-    {
-        $postField = 'gameType,tableId,xueNumber,puNumber,result,ext,pai_result';
-        $params = $this->request->only(explode(',', $postField), 'param', null);
-        
-       
-     
-
-        try {
-            validate(validates::class)->scene('lz_post')->check($params);
-        } catch (ValidateException $e) {
-            return show([], config('ToConfig.http_code.error'), $e->getError());
-        }
-        $map = array();
-        $map['status'] = 1;
-        $map['table_id'] = $params['tableId'];
-        $map['xue_number'] = $params['xueNumber'];
-        $map['pu_number'] = $params['puNumber'];
-        $map['game_type'] = $params['gameType'];
-
-        //查询当日最新的一铺牌
-        $info = Luzhu::whereTime('create_time', 'today')->where('result','<>',0)->where($map)->find();
-        if (!empty($info)) show($info, 0, '数据重复上传');
-
-        #####开始预设###########
-        //查询是否有预设的开牌信息
-        $presetInfo = LuzhuPreset::LuZhuPresetFind($map);
-        $map['update_time'] = $map['create_time'] = time();
-        $HeguanLuzhu = $map;
-
-        $id = 0;
-        if ($presetInfo){
-            //插入当前信息
-            $id = $presetInfo['id'];
-            $map['result'] = $presetInfo['result'];
-            $map['result_pai'] = $presetInfo['result_pai'];
-        }else{
-            //插入当前信息
-            $map['result'] = intval($params['result']) . '|' . intval($params['ext']);
-            $map['result_pai'] = json_encode($params['pai_result']);
-        }
-        //荷官正常露珠
-        $HeguanLuzhu['result'] = intval($params['result']) . '|' . intval($params['ext']);
-        $HeguanLuzhu['result_pai'] = json_encode($params['pai_result']);
-        #####结束预设###########
-
-        switch ($map['game_type']){
-            case 3:
-                //龙虎开牌
-                $card = new CardSettlementService();
-                return $card->open_game($map,$HeguanLuzhu,$id);
-            default:
-                show([],404,'game_type错误！');
-        }
-    }
-    
+   
     //删除指定露珠
     public function lz_delete(): string
     {

@@ -31,16 +31,15 @@ class Order extends OrderBase
             'ip' => request()->ip()
         ]);
 
-        $post = $this->request->param('bet');                                                               // 获取投注记录 主要是 注码跟金额
-        
-        if (empty($post)) show([], config('ToConfig.http_code.error'), 'amount not selected');                // 空数据 处理
+        $post = $this->request->param('bet');      // 获取投注记录 主要是 注码跟金额
+        if (empty($post)) show([], config('ToConfig.http_code.error'), 'amount not selected');  // 空数据 处理
         
         $table_id = $this->request->param('table_id/d', 0);                                           // 获取台桌ID
         if (empty($table_id)) show([], config('ToConfig.http_code.error'), 'table not selected');          // 为空，提示选择台桌
         
         $game_type = $this->request->param('game_type/d', 0);                                         // 获取游戏类型
         if (empty($game_type)) show([], config('ToConfig.http_code.error'), 'game not selected');         //  为空，则提示
-        if ($game_type != 3 && $game_type !=1) show([], config('ToConfig.http_code.error'), 'game not selected');    //  为空，则提示
+        if ($game_type != 9) show([], config('ToConfig.http_code.error'), 'game not selected');    //  为空，则提示
         //查询台桌状态
 
         LogHelper::debug('下注参数接收', [
@@ -66,18 +65,9 @@ class Order extends OrderBase
 
         #########查询是否当前局下注过############下注过取当前局的下注免佣状态，没下注过取传过来的免佣状态
         $is_exempt = $this->request->param('is_exempt', 0);//免佣状态。默认关闭
-        // 增加非免佣状态 判断  : 非免佣 禁止 投注幸运6 
-        // 客户要求取消 先注释 阻止了
-        // if ($is_exempt == 0) {
-        //     foreach ($post as $key => $value) {
-        //         if ($value['rate_id'] == 3) {
-        //             show([], config('ToConfig.http_code.error'), 'this status cant use luck6');
-        //         }
-        //     }
-        // }
         //查询是否已经购买过一次 当前局   // 101 没下单过.不是101表示下注过，返回当前下注免佣状态
         $is_order = GameRecordsTemporary::user_status_bureau_number_is_exempt($table_id, $xue_number, self::$user, true);
-        // $is_exempt = $is_order == 101 ? $is_exempt : $is_order;
+
         // 如果发送过来的数据 免佣状态与 当前的免佣状态不同，则提示无法投注
         if ($is_order != 101 && $is_order != $is_exempt) {
             show([],config('ToConfig.http_code.error'), lang('the Council has bet') . ':' . $is_order);
@@ -110,15 +100,6 @@ class Order extends OrderBase
             $post_info[$key]['rate_info_id'] = $odds['id'];
             $post_info[$key]['rate_info_name'] = $odds['game_tip_name'];
             $post_info[$key]['rate_info_peilv'] = $odds['peilv'];
-            // 特殊投注值处理
-            if ($odds['id'] == 8) {//是压的庄赢 ，，需要查看是否开启免佣
-                $array = explode('/', $odds['peilv']);
-                if ($is_exempt == 1) {//开启免佣
-                    $post_info[$key]['rate_info_peilv'] = $array[0];
-                } else {//没开免佣
-                    $post_info[$key]['rate_info_peilv'] = $array[1];
-                }
-            }
             // 针对未获取到赔率的进行特殊提示
             if (!$post_info[$key]['rate_info']) show([],config('ToConfig.http_code.error'), 'please fill in the correct odds id');
         }
@@ -146,9 +127,9 @@ class Order extends OrderBase
             // ++++++++++花式插入判断结束+++++++
             // 第二步：删除之前的全部投注记录
             $mapForDelLog = $this->model->whereTime('created_at','-30 Minutes')->where($mapForDel)->column('id');//删除资金记录
-            //使用到本下注订单的 游戏 501现场  502 龙虎  503 骰宝
+            //使用到本下注订单的 游戏 501现场  502 龙虎  509 骰宝
             MoneyLog::where('uid', self::$user['id'])
-                ->where('status', 'in',[501,503])
+                ->where('status', 'in',[509])
                 ->where('source_id', 'in', $mapForDelLog)
                 ->whereTime('create_time','-30 Minutes')
                 ->update(['status'=>$game_type*-1]);
@@ -233,8 +214,7 @@ class Order extends OrderBase
         $data['money_balance'] = self::$user['money_balance'] - $dec_money;     // 返回给前端展示数据标注
         $data['money_spend'] = $dec_money;                                      // 返回给前端展示数据标注
         if ($save){
-            //lang('current bet')
-            worker_tcp(self::$user['id'],lang('current bet'),$data,203);
+            worker_tcp(self::$user['id'],lang('current bet'),$data,209);
             show($data);
         };
         show([], config('ToConfig.http_code.error'), 'bet failed');// 返回给前端展示 异常数据

@@ -507,7 +507,7 @@ class CardSettlementService extends CardServiceBase
                 'money_end' => $user->money_balance + $userData['money_balance_add_temp'],
                 'uid' => $userData['id'],
                 'type' => 1,
-                'status' => 503, // 卡牌游戏结算
+                'status' => 509, // 卡牌游戏结算
                 'source_id' => $luzhu_id,
                 'money' => $userData['money_balance_add_temp'],
                 'create_time' => date('Y-m-d H:i:s'),

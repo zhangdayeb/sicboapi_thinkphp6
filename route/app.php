@@ -102,8 +102,6 @@ Route::rule('sicbo/game/poker$', '/game.GameInfo/get_poker_type');
 // 测试露珠数据接口
 Route::rule('api/test/luzhu', '/game.GetForeignTableInfo/testluzhu');
 
-// 测试开牌数据设置接口  
-Route::rule('sicbo/get_table/post_data_test$', '/game.GetForeignTableInfo/set_post_data_test');
 
 // ========================================
 // 系统基础路由
