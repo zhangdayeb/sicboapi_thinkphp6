@@ -7,7 +7,7 @@ use app\model\Table;
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 // 初始化一个worker容器，监听1234端口
-$worker = new Worker(env('worker.one', 'websocket://0.0.0.0:2003'));
+$worker = new Worker(env('worker.one', 'websocket://0.0.0.0:2009'));
 // ====这里进程数必须必须必须设置为1====
 $worker->count = 1;
 // 新增加一个属性，用来保存uid到connection的映射(uid是用户id或者客户端唯一标识)
