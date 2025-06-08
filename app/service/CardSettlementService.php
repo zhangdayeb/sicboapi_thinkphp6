@@ -210,14 +210,14 @@ class CardSettlementService extends CardServiceBase
         ]);
 
         // 延迟1秒执行用户结算任务（避免数据冲突）
-        $queue = Queue::later(1, UserSettleTaskJob::class, $post, 'bjl_open_queue');
+        $queue = Queue::later(1, UserSettleTaskJob::class, $post, 'sicbo_open_queue');
         
         if ($queue == false) {
             LogHelper::error('结算任务分发失败');
             show([], 0, 'dismiss job queue went wrong');
         }
 
-        LogHelper::debug('结算任务分发成功', ['queue_name' => 'bjl_open_queue']);
+        LogHelper::debug('结算任务分发成功', ['queue_name' => 'sicbo_open_queue']);
     }
 
     /**
@@ -538,7 +538,7 @@ class CardSettlementService extends CardServiceBase
         LogHelper::debug('开始后续处理任务');
         
         // 延迟2秒执行资金日志写入任务
-        Queue::later(2, BetMoneyLogInsert::class, $post, 'bjl_money_log_queue');
+        Queue::later(2, BetMoneyLogInsert::class, $post, 'sicbo_money_log_queue');
         LogHelper::debug('资金日志写入任务已加入队列');
 
         // 清理临时投注记录

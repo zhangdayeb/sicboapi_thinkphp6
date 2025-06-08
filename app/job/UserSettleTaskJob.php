@@ -18,7 +18,7 @@ class UserSettleTaskJob
         LogHelper::debug('=== 结算队列任务开始 ===', [
             'attempt' => $job->attempts(),
             'max_attempts' => 3,
-            'queue_name' => 'bjl_open_queue'
+            'queue_name' => 'sicbo_open_queue'
         ]);
         
         LogHelper::debug('任务数据', $data);

@@ -376,7 +376,7 @@ class GetForeignTableInfo extends BaseController
             show($data, config('ToConfig.http_code.error'));
         }
         $data['table_id'] = $table_id;
-        Queue::later($time, TableEndTaskJob::class, $data,'bjl_end_queue');
+        Queue::later($time, TableEndTaskJob::class, $data,'sicbo_end_queue');
         redis()->del('table_info_'.$table_id);
         redis()->set('table_set_start_signal_'.$table_id,$table_id,$time+5);//储存redis
         show($data);
