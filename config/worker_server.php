@@ -1,35 +1,55 @@
 <?php
-// ========================================
-// config/worker_server.php - Worker Server配置
-// 用于 php think worker:server 命令
-// ========================================
+// +----------------------------------------------------------------------
+// | ThinkPHP [ WE CAN DO IT JUST THINK IT ]
+// +----------------------------------------------------------------------
+// | Copyright (c) 2006-2018 http://thinkphp.cn All rights reserved.
+// +----------------------------------------------------------------------
+// | Licensed ( http://www.apache.org/licenses/LICENSE-2.0 )
+// +----------------------------------------------------------------------
+// | Author: liu21st <liu21st@gmail.com>
+// +----------------------------------------------------------------------
 
+// +----------------------------------------------------------------------
+// | Workerman设置 仅对 php think worker:server 指令有效
+// +----------------------------------------------------------------------
 return [
-    // 监听协议和地址
-    'protocol'       => 'websocket',           // 协议类型
-    'host'           => '0.0.0.0',             // 监听地址
-    'port'           => 2009,                  // 监听端口 - 强制2009
-    'socket'         => 'websocket://0.0.0.0:2009', // 完整socket地址
-    'context'        => [],                    // socket上下文选项
+    // 扩展自身需要的配置
+    'protocol'       => 'websocket', // 协议 支持 tcp udp unix http websocket text
+    'host'           => '0.0.0.0', // 监听地址
+    'port'           => 2345, // 监听端口
+    'socket'         => '', // 完整监听地址
+    'context'        => [], // socket 上下文选项
+    'worker_class'   => '\app\http\Worker', // 自定义Workerman服务类名 支持数组定义多个服务
 
-    // Worker配置
-    'worker_class'   => '\app\http\Worker',    // 自定义Worker类
-    'name'           => 'SicboWebSocket',      // Worker名称
-    'count'          => 1,                     // 进程数 - 单进程
-    'daemonize'      => false,                 // 是否守护进程模式
-    'pidFile'        => '',                    // PID文件路径
+    // 支持workerman的所有配置参数
+    'name'           => 'thinkphp',
+    'count'          => 4,
+    'daemonize'      => false,
+    'pidFile'        => '',
 
-    // Workerman全局配置
-    'stdoutFile'     => '',                    // 标准输出重定向文件
-    'logFile'        => '',                    // 日志文件路径
-    'user'           => '',                    // 运行用户
-    'group'          => '',                    // 运行用户组
+    // 支持事件回调
+    // onWorkerStart
+    'onWorkerStart'  => function ($worker) {
 
-    // 事件回调配置
-    'onWorkerStart'  => null,                  // Worker启动回调
-    'onWorkerReload' => null,                  // Worker重载回调
-    'onConnect'      => null,                  // 连接建立回调
-    'onMessage'      => null,                  // 消息接收回调
-    'onClose'        => null,                  // 连接关闭回调
-    'onError'        => null,                  // 错误回调
+    },
+    // onWorkerReload
+    'onWorkerReload' => function ($worker) {
+
+    },
+    // onConnect
+    'onConnect'      => function ($connection) {
+
+    },
+    // onMessage
+    'onMessage'      => function ($connection, $data) {
+        $connection->send('receive success');
+    },
+    // onClose
+    'onClose'        => function ($connection) {
+
+    },
+    // onError
+    'onError'        => function ($connection, $code, $msg) {
+        echo "error [ $code ] $msg\n";
+    },
 ];

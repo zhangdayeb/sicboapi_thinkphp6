@@ -3,222 +3,131 @@ use think\facade\Route;
 
 /**
  * ========================================
- * 骰宝游戏系统路由配置 - 精简版
- * 只包含实际存在的控制器和方法
+ * 博彩游戏系统路由配置
  * ========================================
+ * 主要包含：骰宝、龙虎斗、牛牛等游戏的API路由
+ * 支持荷官操作、用户投注、游戏结算等功能
  */
+
+// ========================================
+// 荷官操作相关路由
+// ========================================
+
+/**
+ * 露珠数据获取相关路由
+ * 露珠：记录游戏历史结果的数据表格
+ */
+// 获取露珠列表数据
+Route::rule('sicbo/get_table/get_data$', '/game.GetForeignTableInfo/get_lz_list');
+
+// 获取荷官端露珠数据
+Route::rule('sicbo/get_table/get_hg_data$', '/game.GetForeignTableInfo/get_hg_lz_list');
+
+// 获取电投端露珠数据
+Route::rule('api/diantou/table/getData', '/game.GetForeignTableInfo/get_hg_data_list');
+
+// 获取电投端视频流地址
+Route::rule('api/diantou/table/getTableVideo', '/game.GetForeignTableInfo/get_hg_video_list');
+
+/**
+ * 台桌基础信息路由
+ */
+// 获取台桌视频流信息
+Route::rule('sicbo/get_table/get_table_video', '/game.GetForeignTableInfo/get_table_video');
+
+// 获取台桌列表
+Route::rule('sicbo/get_table/list$', '/game.GetForeignTableInfo/get_table_list');
+
+// 获取台桌统计信息（庄闲和次数等）
+Route::rule('sicbo/get_table/get_table_count$', '/game.GetForeignTableInfo/get_table_count');
+
+// 获取当前台桌详细信息（靴号、铺号等）
+Route::rule('sicbo/get_table/table_info$', '/game.GetForeignTableInfo/get_table_info');
+
+/**
+ * 荷官开牌操作路由
+ */
+// 荷官手动开牌设置露珠数据
+Route::rule('sicbo/get_table/post_data$', '/game.GetForeignTableInfo/set_post_data');
+
+// 获取扑克牌详细信息
+Route::rule('sicbo/pai/info$', '/game.GetForeignTableInfo/get_pai_info');
+
+/**
+ * 游戏控制相关路由
+ */
+// 发送开局信号（开始投注倒计时）
+Route::rule('sicbo/start/signal$', '/game.GetForeignTableInfo/set_start_signal');
+
+// 发送结束信号（停止投注）
+Route::rule('sicbo/end/signal$', '/game.GetForeignTableInfo/set_end_signal');
+
+// 设置洗牌状态
+Route::rule('sicbo/get_table/wash_brand$', '/game.GetForeignTableInfo/get_table_wash_brand');
+
+// 手动设置靴号（新一轮游戏开始）
+Route::rule('sicbo/get_table/add_xue$', '/game.GetForeignTableInfo/set_xue_number');
+
+/**
+ * 露珠管理操作路由
+ */
+// 删除指定露珠记录
+Route::rule('sicbo/get_table/clear_lu_zhu$', '/game.GetForeignTableInfo/lz_delete');
+
+// 清空指定台桌的所有露珠记录
+Route::rule('sicbo/get_table/clear_lu_zhu_one_table$', '/game.GetForeignTableInfo/lz_table_delete');
+
+// ========================================
+// 用户游戏相关路由
+// ========================================
+
+/**
+ * 用户投注相关路由
+ */
+// 用户下注接口
+Route::rule('sicbo/bet/order$', '/order.Order/user_bet_order');
+
+// 获取用户当前投注记录
+Route::rule('sicbo/current/record$', '/order.Order/order_current_record');
+
+/**
+ * 游戏信息查询路由
+ */
+// 获取指定露珠的扑克牌型信息
+Route::rule('sicbo/game/poker$', '/game.GameInfo/get_poker_type');
+
+// ========================================
+// 测试环境路由（仅开发调试用）
+// ========================================
+// 测试露珠数据接口
+Route::rule('api/test/luzhu', '/game.GetForeignTableInfo/testluzhu');
+
+// 测试开牌数据设置接口  
+Route::rule('sicbo/get_table/post_data_test$', '/game.GetForeignTableInfo/set_post_data_test');
 
 // ========================================
 // 系统基础路由
 // ========================================
-
-// 简单的首页路由（如果Index控制器不存在，使用闭包函数）
-Route::get('/', function() {
-    return json([
-        'system' => 'Sicbo Game System',
-        'version' => '3.0.1',
-        'status' => 'running',
-        'timestamp' => time(),
-        'message' => '骰宝游戏系统运行正常'
-    ]);
-})->name('homepage');
-
-// 健康检查接口
-Route::get('health', function() {
-    try {
-        // 测试数据库连接
-        $dbStatus = 'connected';
-        try {
-            \think\facade\Db::query('SELECT 1');
-        } catch (\Exception $e) {
-            $dbStatus = 'error: ' . $e->getMessage();
-        }
-        
-        // 测试缓存
-        $cacheStatus = 'connected';
-        try {
-            \think\facade\Cache::set('health_test', time(), 60);
-            \think\facade\Cache::get('health_test');
-        } catch (\Exception $e) {
-            $cacheStatus = 'error: ' . $e->getMessage();
-        }
-        
-        return json([
-            'status' => 'ok',
-            'timestamp' => time(),
-            'version' => '3.0.1',
-            'services' => [
-                'sicbo' => 'active',
-                'database' => $dbStatus,
-                'cache' => $cacheStatus
-            ],
-            'memory_usage' => round(memory_get_usage() / 1024 / 1024, 2) . 'MB'
-        ]);
-    } catch (\Exception $e) {
-        return json([
-            'status' => 'error',
-            'message' => $e->getMessage(),
-            'timestamp' => time()
-        ], 500);
-    }
-})->name('health_check');
-
-// 系统信息接口
-Route::get('info', function() {
-    return json([
-        'system' => 'Sicbo Game System',
-        'version' => '3.0.1',
-        'api_version' => '2.0',
-        'timestamp' => time(),
-        'datetime' => date('Y-m-d H:i:s'),
-        'timezone' => 'Asia/Shanghai',
-        'available_modules' => [
-            'sicbo_game' => 'SicboGameController',
-            'sicbo_bet' => 'SicboBetController'
-        ],
-        'php_version' => PHP_VERSION
-    ]);
-})->name('system_info');
-
-// ========================================
-// 骰宝游戏核心路由组
-// ========================================
-
-/**
- * 骰宝游戏主控制器路由
- * 对应: app\controller\sicbo\SicboGameController
- * 实际存在的方法：getTableInfo, getGameHistory, getStatistics, startNewGame, 
- *              stopBetting, announceResult, getCurrentBetStats, getOddsInfo
- */
-Route::group('sicbo/game', function () {
-    
-    // ===== 信息查询类路由 =====
-    
-    // 获取台桌游戏信息
-    Route::get('table-info', 'sicbo.SicboGameController/getTableInfo')
-        ->name('sicbo_table_info');
-    
-    // 获取游戏历史记录  
-    Route::get('history', 'sicbo.SicboGameController/getGameHistory')
-        ->name('sicbo_game_history');
-    
-    // 获取游戏统计数据
-    Route::get('statistics', 'sicbo.SicboGameController/getStatistics')
-        ->name('sicbo_game_statistics');
-   
-    
-    // ===== 游戏控制类路由 =====
-    
-    // 开始新游戏局
-    Route::post('start', 'sicbo.SicboGameController/startNewGame')
-        ->name('sicbo_start_game');
-        
-});
-
-// ========================================
-// 骰宝投注路由组
-// ========================================
-
-/**
- * 骰宝投注控制器路由
- * 对应: app\controller\sicbo\SicboBetController  
- * 实际存在的方法：placeBet, modifyBet, cancelBet, getCurrentBets, 
- *              getBetHistory, getBetDetail, getUserBalance, getBetLimits, validateBet
- */
-Route::group('sicbo/bet', function () {
-    
-    // ===== 投注操作类路由 =====
-    
-    // 提交用户投注
-    Route::post('place', 'sicbo.SicboBetController/placeBet')
-        ->name('sicbo_place_bet');    
-    
-    // ===== 投注查询类路由 =====
-    
-    // 获取用户当前投注
-    Route::get('current', 'sicbo.SicboBetController/getCurrentBets')
-        ->name('sicbo_current_bets');
-    
-    // 获取用户投注历史
-    Route::get('history', 'sicbo.SicboBetController/getBetHistory')
-        ->name('sicbo_bet_history');
-    
-    // 获取投注详情（带参数路由）
-    Route::get('detail/:bet_id', 'sicbo.SicboBetController/getBetDetail')
-        ->pattern(['bet_id' => '\d+'])
-        ->name('sicbo_bet_detail');
-    
-    // ===== 用户信息类路由 =====
-    
-    // 获取用户余额信息
-    Route::get('balance', 'sicbo.SicboBetController/getUserBalance')
-        ->name('sicbo_user_balance');
-    
-    // 获取投注限额信息
-    Route::get('limits', 'sicbo.SicboBetController/getBetLimits')
-        ->name('sicbo_bet_limits');
-});
-
-
-// ========================================
-// 错误处理
-// ========================================
-
-// 404 错误处理
-Route::miss(function() {
-    return json([
-        'code' => 404,
-        'message' => 'API接口不存在',
-        'available_endpoints' => [
-            'GET /' => '系统首页',
-            'GET /health' => '健康检查', 
-            'GET /info' => '系统信息',
-            'GET /sicbo/game/*' => '游戏相关接口',
-            'POST|PUT|DELETE /sicbo/bet/*' => '投注相关接口'
-        ],
-        'timestamp' => time()
-    ], 404);
-});
+// 首页路由
+Route::rule('/$', '/index/index');
 
 /**
  * ========================================
- * 路由说明文档
+ * 路由说明
  * ========================================
  * 
- * 本路由文件仅包含实际存在的控制器和方法：
+ * 核心术语解释：
+ * - 露珠(LuZhu)：记录每局游戏结果的历史数据表
+ * - 台桌(Table)：游戏桌，可同时运行多个
+ * - 靴号(XueNumber)：一副牌的编号，类似场次
+ * - 铺号(PuNumber)：当前靴内的局数编号
+ * - 荷官(Dealer)：负责发牌开牌的操作员
+ * - 电投(DianTou)：电子投注终端
  * 
- * 1. SicboGameController (8个方法):
- *    - getTableInfo: 获取台桌信息
- *    - getGameHistory: 获取游戏历史  
- *    - getStatistics: 获取统计数据
- *    - getCurrentBetStats: 获取投注统计
- *    - getOddsInfo: 获取赔率信息
- *    - startNewGame: 开始新游戏
- *    - stopBetting: 停止投注
- *    - announceResult: 公布结果
- * 
- * 2. SicboBetController (9个方法):
- *    - placeBet: 提交投注
- *    - modifyBet: 修改投注
- *    - cancelBet: 取消投注  
- *    - getCurrentBets: 获取当前投注
- *    - getBetHistory: 获取投注历史
- *    - getBetDetail: 获取投注详情
- *    - getUserBalance: 获取用户余额
- *    - getBetLimits: 获取投注限额
- *    - validateBet: 验证投注
- * 
- * 3. 系统路由:
- *    - / : 系统首页
- *    - /health : 健康检查
- *    - /info : 系统信息
- *    - /test/* : 测试路由（仅调试模式）
- * 
- * 注意：已删除不存在的控制器路由：
- *    - SicboAdminController
- *    - SicboApiController  
- *    - Index控制器
- *    - Debug控制器
- * 
- * ========================================
+ * 游戏流程：
+ * 1. 荷官发送开局信号开始倒计时
+ * 2. 用户在倒计时内进行投注
+ * 3. 倒计时结束后荷官开牌
+ * 4. 系统自动计算结果并结算
+ * 5. 将结果记录到露珠表中
  */
