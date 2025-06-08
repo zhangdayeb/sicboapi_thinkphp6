@@ -19,7 +19,7 @@ class LuzhuRes extends Model
             !empty($one_info) &&  $map['xue_number'] = $one_info->xue_number;
         }
 
-        $map['game_type'] = isset($params['gameType']) && !empty($params['gameType']) ? $params['gameType'] : 3; // 代表骰宝 | 龙虎
+        $map['game_type'] = isset($params['gameType']) && !empty($params['gameType']) ? $params['gameType'] : 9; // 代表骰宝 | 龙虎
         $limit = 66;
         $returnData = array();
 
@@ -55,7 +55,7 @@ class LuzhuRes extends Model
             !empty($one_info) &&  $map['xue_number'] = $one_info->xue_number;
         }
 
-        $map['game_type'] = isset($params['gameType']) && !empty($params['gameType']) ? $params['gameType'] : 3; // 代表骰宝 | 龙虎
+        $map['game_type'] = isset($params['gameType']) && !empty($params['gameType']) ? $params['gameType'] : 9; // 代表骰宝 | 龙虎
         $limit = 66;
         if($map['game_type'] == 2){
             $limit = 180;

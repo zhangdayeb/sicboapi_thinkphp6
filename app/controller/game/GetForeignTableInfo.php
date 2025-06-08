@@ -252,16 +252,8 @@ class GetForeignTableInfo extends BaseController
         }
         // 查询当前最新的靴号
         //主动换靴号，获取最新的靴号 +1；铺号为 0
-        // 缺少时间
         $nowTime = time();
         $startTime = strtotime(date("Y-m-d 04:00:00", time()));
-        // 如果小于，则算前一天的
-//        if ($nowTime < $startTime) {
-//            $startTime = $startTime - (24 * 60 * 60);
-//        } else {
-//            // 保持不变 这样做到 自动更新 露珠
-//        }
-        //取才创建时间最后一条数据
         $find = Luzhu::where('table_id', $post['tableId'])->whereTime('create_time', 'today')->order('id desc')->find();
 
         if ($find) {
@@ -351,27 +343,7 @@ class GetForeignTableInfo extends BaseController
 
         $nowTime = time();
         $startTime = strtotime(date("Y-m-d 04:00:00", time()));
-        // 如果小于，则算前一天的
-//        if ($nowTime < $startTime) {
-//            $startTime = $startTime - (24 * 60 * 60);
-//        } else {
-//            // 保持不变 这样做到 自动更新 露珠
-//        }
-
         $xun = bureau_number($params['tableId'],true);
-
-        //$xueData = Luzhu::whereTime('create_time', 'today')->where($map)->order('id desc')->find();
-//        dump(date("Y-m-d H:i:s",$startTime));
-//        dump(Db::name('diantouGameLuZhu')->fetchSql()->where('create_time','>',$startTime)->where($map)->order('id desc')->find());
-
-
-        //$returnData['num_xue'] = isset($xueData['xue_number']) ? $xueData['xue_number'] : 1;
-//        if ($xueData['result'] == '0') {
-//            $returnData['num_pu'] = 1;
-//        } else {
-//            $returnData['num_pu'] = ($xueData['result'] == '0|0') ? 1 : ($xueData['pu_number'] + 1);
-//        }
-
         $returnData['id'] = $info['id'];
         $returnData['num_pu'] = $xun['xue']['pu_number'];
         $returnData['num_xue'] = $xun['xue']['xue_number'];
