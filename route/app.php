@@ -43,7 +43,8 @@ Route::rule('sicbo/get_table/get_table_count$', '/game.GetForeignTableInfo/get_t
 
 // 获取当前台桌详细信息（靴号、铺号等）
 Route::rule('sicbo/get_table/table_info$', '/game.GetForeignTableInfo/get_table_info');
-
+// 获取单个用户详细信息
+Route::rule('sicbo/user/info$', '/game.GetForeignTableInfo/get_user_info');
 /**
  * 荷官开牌操作路由
  */

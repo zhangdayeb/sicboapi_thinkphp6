@@ -13,11 +13,97 @@ use app\service\CardSettlementService;
 use app\validate\BetOrder as validates;
 use think\exception\ValidateException;
 use think\facade\Queue;
+use app\model\UserModel;           // 用户模型
+use app\model\GameRecords;         // 游戏记录模型  
+use think\facade\Db;               // 数据库操作
 
 class GetForeignTableInfo extends BaseController
 {
     
+/**
+ * ========================================
+ * 获取用户详细信息
+ * ========================================
+ * 
+ * 根据用户ID获取用户的完整信息，包括基础信息、余额、统计数据等
+ * 主要用于：
+ * - 荷官端查看用户信息
+ * - 客服端用户资料查询
+ * - 管理端用户管理
+ * 
+ * @return string JSON响应
+ */
+public function get_user_info(): string
+{
+    LogHelper::debug('=== 获取用户信息请求开始 ===');
     
+    // 获取参数
+    $user_id = $this->request->param('user_id', 0);
+    
+    // 参数验证
+    if (empty($user_id) || !is_numeric($user_id)) {
+        LogHelper::warning('用户ID参数无效', ['user_id' => $user_id]);
+        return show([], config('ToConfig.http_code.error'), '用户ID必填且必须为数字');
+    }
+    
+    $user_id = intval($user_id);
+    
+    LogHelper::debug('查询用户信息', ['user_id' => $user_id]);
+    
+    try {
+        // 查询用户基础信息
+        $userInfo = UserModel::where('id', $user_id)->find();
+        
+        if (empty($userInfo)) {
+            LogHelper::warning('用户不存在', ['user_id' => $user_id]);
+            return show([], config('ToConfig.http_code.error'), '用户不存在');
+        }
+        
+        // 转换为数组便于处理
+        $userData = $userInfo->toArray();
+        
+        // 移除敏感信息
+        unset($userData['pwd']);
+        unset($userData['withdraw_pwd']);
+        
+        // 格式化金额字段
+        $userData['money_balance'] = number_format($userData['money_balance'], 2);
+        $userData['money_freeze'] = number_format($userData['money_freeze'], 2);
+        $userData['money_total_recharge'] = number_format($userData['money_total_recharge'], 2);
+        $userData['money_total_withdraw'] = number_format($userData['money_total_withdraw'], 2);
+        $userData['rebate_balance'] = number_format($userData['rebate_balance'], 2);
+        $userData['rebate_total'] = number_format($userData['rebate_total'], 2);
+        
+        // 格式化状态字段
+        $userData['type_text'] = $userData['type'] == 1 ? '代理' : '会员';
+        $userData['status_text'] = $userData['status'] == 1 ? '正常' : '冻结';
+        $userData['state_text'] = $userData['state'] == 1 ? '在线' : '离线';
+        $userData['is_real_name_text'] = $userData['is_real_name'] == 1 ? '已实名' : '未实名';
+        
+        // 虚拟账号类型
+        $fictitiousTypes = [
+            0 => '正常账号',
+            1 => '虚拟账号',
+            2 => '试玩账号'
+        ];
+        $userData['is_fictitious_text'] = $fictitiousTypes[$userData['is_fictitious']] ?? '未知';
+        
+       
+        LogHelper::debug('用户信息查询成功', [
+            'user_id' => $user_id,
+            'user_name' => $userData['user_name'],
+            'balance' => $userData['money_balance']
+        ]);
+        
+        return show($userData, 1, '获取用户信息成功');
+        
+    } catch (\Exception $e) {
+        LogHelper::error('获取用户信息失败', $e);
+        return show([], config('ToConfig.http_code.error'), '获取用户信息失败：' . $e->getMessage());
+    }
+}
+
+
     public function testluzhu(){
     
         $params = $this->request->param();
@@ -204,7 +290,7 @@ class GetForeignTableInfo extends BaseController
 
         // 根据游戏类型调用相应服务
         switch ($map['game_type']) {
-            case 3:
+            case 9:
                 LogHelper::debug('调用骰宝开牌服务', ['table_id' => $map['table_id']]);
                 $card = new CardSettlementService();
                 return $card->open_game($map, $HeguanLuzhu, $id);
@@ -349,7 +435,7 @@ class GetForeignTableInfo extends BaseController
         $returnData['num_xue'] = $xun['xue']['xue_number'];
         $returnData['result_info']  = ['table_info'=>['game_type'=>123456]];
         $returnData['money_spend']  = '';
-        worker_tcp('userall','洗牌中！',$returnData,207);
+        // worker_tcp('userall','洗牌中！',$returnData,207);
         unset($returnData['result_info']);
         unset($returnData['money_spend']);
         // 返回数据
