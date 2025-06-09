@@ -25,7 +25,7 @@ class Base extends BaseController
         $url = env('curl.http', '0.0.0.0').RequestUrl::user_url();
         $data = Curl::post($url, ['token' => $token], ['x-csrf-token' => $token]);
 
-        if ($data['code'] != 200) return show([],200,'token错误');
+        if ($data['code'] != 200) return show([],500,'token错误');
         self::$user = $data['data'];
         Lang::load(app()->getRootPath().'/app/lang/'.self::$user['language'].'.php');
         return $this;

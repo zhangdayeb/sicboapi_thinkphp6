@@ -172,10 +172,10 @@ class OpenPaiCalculationService
         // ========================================
         // 初始化计算变量 - 基础组
         // ========================================
-        if (4<= $total <=10){
+        if (4<= $total && $total <=10){
             $basic_small = 1;
         }
-        if (11<= $total <=17){
+        if (11<= $total && $total <=17){
             $basic_big = 1;
         }
         if($total % 2 == 1 ){
@@ -250,7 +250,7 @@ class OpenPaiCalculationService
             $single_single_6 = 1;
         }
         // 
-        if($dice1 ==  $dice2 == 6 && $dice3 == $dice1){
+        if($dice1 ==  $dice2 && $dice3 == $dice1){
             $triple_any_triple = 1;
         }
 
@@ -424,7 +424,7 @@ class OpenPaiCalculationService
                 $res = 1;
             }
         }
-        if($dice3 == $num11){
+        if($dice3 == $num1){
             if($dice1 == $num2 || $dice2 == $num2){
                 $res = 1;
             }
@@ -456,14 +456,14 @@ class OpenPaiCalculationService
      * @param array $res 中间计算结果数组
      * @return array 最终游戏结果数组
      */
-    public function calculation_result(array $res): array
+    public function calculation_result(array $calculation_start): array
     {
            
-        $res = Db::name('dianji_game_peilv')->wehre('game_type_id',9)->select()->toArray();
+        $res = Db::name('dianji_game_peilv')->where('game_type_id',9)->select()->toArray();
         $win_array = [];   // 主结果：1=庄赢, 2=闲赢, 3=和牌, 0=错误   
 
         foreach($res as $key => $value){
-            if($res[$value['remark']] == 1){
+            if($calculation_start[$value['remark']] == 1){
                 $win_array[] = $value['id'];
             }
         } 
@@ -503,14 +503,14 @@ class OpenPaiCalculationService
      * @param int $res 投注类型ID
      * @return string 中文描述
      */
-    public function user_pai_chinese(int $res): string
+    public function user_pai_chinese(int $win): string
     {
-        $res = Db::name('dianji_game_peilv')->wehre('game_type_id',9)->select()->toArray();
+        $res = Db::name('dianji_game_peilv')->where('game_type_id',9)->select()->toArray();
         $pai_names = [];
         foreach($res as $key => $value){
-            $pai_names[$value['id']] = $value['game_tip_name']
+            $pai_names[$value['id']] = $value['game_tip_name'];
         }       
-        return $pai_names[$res] ?? '未知';
+        return $pai_names[$win] ?? '未知';
     }
 
     /**

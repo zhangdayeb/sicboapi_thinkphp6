@@ -409,7 +409,9 @@ public function get_user_info(): string
         $params = $this->request->param();
         $returnData = array();
         $info = Table::order('id desc')->find($params['tableId']);
+
         // 发给前台的 数据
+        $returnData['table_title'] = $info['table_title'];
         $returnData['lu_zhu_name'] = $info['lu_zhu_name'];
         $returnData['right_money_banker_player'] = $info['xian_hong_zhuang_xian_usd'];
         $returnData['right_money_banker_player_cny'] = $info['xian_hong_zhuang_xian_cny'];
@@ -423,7 +425,6 @@ public function get_user_info(): string
 
         // 获取最新的 靴号，铺号
         $map = array();
-        //$map['status'] = 1;
         $map['table_id'] = $params['tableId'];
         $map['game_type'] = $params['gameType'];
 
@@ -433,11 +434,8 @@ public function get_user_info(): string
         $returnData['id'] = $info['id'];
         $returnData['num_pu'] = $xun['xue']['pu_number'];
         $returnData['num_xue'] = $xun['xue']['xue_number'];
-        $returnData['result_info']  = ['table_info'=>['game_type'=>123456]];
-        $returnData['money_spend']  = '';
-        // worker_tcp('userall','洗牌中！',$returnData,207);
-        unset($returnData['result_info']);
-        unset($returnData['money_spend']);
+        $returnData['bureau_number'] = $xun['bureau_number'];
+
         // 返回数据
         show($returnData, 1);
 

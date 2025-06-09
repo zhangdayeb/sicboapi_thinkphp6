@@ -266,9 +266,7 @@ class CardSettlementService extends CardServiceBase
         $pai_result = $card->runs(json_decode($post['result_pai'], true));
 
         LogHelper::debug('开牌计算完成', [
-            'win_array' => $pai_result['win_array'],
-            'zhuang_point' => $pai_result['zhuang_point'],
-            'xian_point' => $pai_result['xian_point']
+            'win_array' => $pai_result['win_array']
         ]);
 
         return $pai_result;
